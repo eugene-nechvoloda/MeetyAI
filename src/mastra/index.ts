@@ -151,16 +151,18 @@ export const mastra = new Mastra({
           const message = triggerInfo.payload?.event?.text || "";
           const channel = triggerInfo.payload?.event?.channel || "";
           const userId = triggerInfo.payload?.event?.user || "";
-          const threadTs = triggerInfo.payload?.event?.thread_ts || triggerInfo.payload?.event?.ts;
-          const eventTs = triggerInfo.payload?.event?.ts || "";
           
-          // Create thread ID for memory
-          const threadId = `slack/${threadTs}`;
+          // Use thread_ts if in a thread, otherwise use the message's ts to start a new thread
+          const rootThreadTs = triggerInfo.payload?.event?.thread_ts || triggerInfo.payload?.event?.ts;
+          
+          // Create thread ID for memory (consistent across messages in same thread)
+          const threadId = `slack/${rootThreadTs}`;
           
           logger?.info("📝 [METIY Slack Trigger] Starting workflow", {
             channel,
             userId,
             threadId,
+            rootThreadTs,
           });
           
           // Start METIY workflow
@@ -171,7 +173,7 @@ export const mastra = new Mastra({
               threadId,
               slackUserId: userId,
               slackChannel: channel,
-              threadTs: eventTs,
+              threadTs: rootThreadTs,
             },
           });
         },

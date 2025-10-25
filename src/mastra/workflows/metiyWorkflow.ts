@@ -28,17 +28,20 @@ const useAgentStep = createStep({
     message: z.string().describe("User message from Slack"),
     threadId: z.string().describe("Thread ID for conversation persistence"),
     slackUserId: z.string().optional().describe("Slack user ID"),
-    slackChannel: z.string().optional().describe("Slack channel ID"),
+    slackChannel: z.string().describe("Slack channel ID"),
+    threadTs: z.string().optional().describe("Thread timestamp for threading"),
   }),
   
   outputSchema: z.object({
     response: z.string().describe("Agent response text"),
     threadId: z.string().describe("Thread ID used"),
+    channel: z.string().describe("Slack channel ID to send to"),
+    threadTs: z.string().optional().describe("Thread timestamp for threading"),
   }),
   
   execute: async ({ inputData, mastra }) => {
     const logger = mastra?.getLogger();
-    const { message, threadId, slackUserId, slackChannel } = inputData;
+    const { message, threadId, slackUserId, slackChannel, threadTs } = inputData;
     
     logger?.info("🤖 [METIY Workflow Step 1] Starting agent processing", {
       threadId,
@@ -65,9 +68,12 @@ const useAgentStep = createStep({
         responseLength: text.length,
       });
       
+      // Pass through channel and threadTs for Step 2
       return {
         response: text,
         threadId,
+        channel: slackChannel,
+        threadTs,
       };
     } catch (error) {
       logger?.error("❌ [METIY Workflow Step 1] Agent processing failed", {
@@ -78,6 +84,8 @@ const useAgentStep = createStep({
       return {
         response: `I encountered an error processing your request: ${error instanceof Error ? error.message : "Unknown error"}. Please try again or contact support if the issue persists.`,
         threadId,
+        channel: slackChannel,
+        threadTs,
       };
     }
   },
@@ -100,6 +108,7 @@ const sendReplyStep = createStep({
   }),
   
   outputSchema: z.object({
+    response: z.string().describe("Agent response that was sent"),
     sent: z.boolean().describe("Whether message was sent successfully"),
     messageTs: z.string().optional().describe("Timestamp of sent message"),
   }),
@@ -127,6 +136,7 @@ const sendReplyStep = createStep({
       });
       
       return {
+        response,
         sent: true,
         messageTs: result.ts,
       };
@@ -136,6 +146,7 @@ const sendReplyStep = createStep({
       });
       
       return {
+        response,
         sent: false,
       };
     }
@@ -151,20 +162,20 @@ const sendReplyStep = createStep({
  */
 export const metiyWorkflow = createWorkflow({
   id: "metiy-workflow",
-  description: "METIY transcript analysis workflow",
+  description: "METIY transcript analysis workflow - connects Slack to METIY agent",
   
   inputSchema: z.object({
     message: z.string().describe("User message from Slack"),
     threadId: z.string().describe("Thread ID for conversation"),
     slackUserId: z.string().optional(),
-    slackChannel: z.string(),
-    threadTs: z.string().optional(),
+    slackChannel: z.string().describe("Slack channel ID"),
+    threadTs: z.string().optional().describe("Thread timestamp"),
   }),
   
   outputSchema: z.object({
-    response: z.string(),
-    sent: z.boolean(),
-    messageTs: z.string().optional(),
+    response: z.string().describe("Agent response text"),
+    sent: z.boolean().describe("Whether Slack message was sent"),
+    messageTs: z.string().optional().describe("Sent message timestamp"),
   }),
 })
   .then(useAgentStep)

@@ -12,14 +12,13 @@ import { Memory } from "@mastra/memory";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { sharedPostgresStorage } from "../storage";
 
-// Import all tools
+// Import all business logic tools (NO Slack messaging tools)
 import { extractTranscriptTool } from "../tools/extractTranscriptTool";
 import { transcribeAudioTool } from "../tools/transcribeAudioTool";
 import { translateTool } from "../tools/translateTool";
 import { analyzeTool } from "../tools/analyzeTool";
 import { saveInsightsTool } from "../tools/saveInsightsTool";
 import { exportLinearTool } from "../tools/exportLinearTool";
-import { slackMessageTool } from "../tools/slackMessageTool";
 
 // Initialize Anthropic provider using AI SDK
 const anthropic = createAnthropic({
@@ -97,7 +96,7 @@ Your analysis operates at research depth 0.7, meaning:
 2. Use \`analyze-four-pass-extraction\` with full transcript text
 3. Review extracted insights for quality and evidence
 4. Use \`save-insights-to-database\` to persist results
-5. Use \`send-slack-message\` to deliver formatted results to user
+5. Return a summary of results to the user (Slack messaging handled by workflow)
 
 **Export Workflow:**
 When user requests export:
@@ -130,11 +129,9 @@ Every insight must have:
 Remember: You are a research tool, not a creative writer. Every claim must be grounded in transcript evidence. Your value comes from meticulous extraction, not invention.`,
 
   // Claude 3.5 Sonnet with temperature 0.35 (research depth 0.7)
-  model: anthropic("claude-3-5-sonnet-20241022", {
-    cacheControl: true,
-  }),
+  model: anthropic("claude-3-5-sonnet-20241022"),
 
-  // Register ALL business logic tools
+  // Register ALL business logic tools (NO Slack messaging - that's in workflow)
   tools: {
     extractTranscriptTool,
     transcribeAudioTool,
@@ -142,7 +139,6 @@ Remember: You are a research tool, not a creative writer. Every claim must be gr
     analyzeTool,
     saveInsightsTool,
     exportLinearTool,
-    slackMessageTool,
   },
 
   // PostgreSQL memory for conversation persistence
