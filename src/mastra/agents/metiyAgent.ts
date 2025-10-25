@@ -9,7 +9,7 @@
 
 import { Agent } from "@mastra/core/agent";
 import { Memory } from "@mastra/memory";
-import { Anthropic } from "@anthropic-ai/sdk";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { sharedPostgresStorage } from "../storage";
 
 // Import all tools
@@ -21,8 +21,8 @@ import { saveInsightsTool } from "../tools/saveInsightsTool";
 import { exportLinearTool } from "../tools/exportLinearTool";
 import { slackMessageTool } from "../tools/slackMessageTool";
 
-// Initialize Anthropic client for Claude
-const anthropic = new Anthropic({
+// Initialize Anthropic provider using AI SDK
+const anthropic = createAnthropic({
   apiKey: process.env.ANTHROPIC_API_KEY || "",
 });
 
@@ -129,12 +129,10 @@ Every insight must have:
 
 Remember: You are a research tool, not a creative writer. Every claim must be grounded in transcript evidence. Your value comes from meticulous extraction, not invention.`,
 
-  // Use Anthropic's model provider
-  model: {
-    provider: "anthropic",
-    name: "claude-3-5-sonnet-20241022",
-    toolChoice: "auto",
-  } as any,
+  // Claude 3.5 Sonnet with temperature 0.35 (research depth 0.7)
+  model: anthropic("claude-3-5-sonnet-20241022", {
+    cacheControl: true,
+  }),
 
   // Register ALL business logic tools
   tools: {
