@@ -129,6 +129,84 @@ export const mastra = new Mastra({
         // 3. Establishing a publish-subscribe system for real-time monitoring
         //    through the workflow:${workflowId}:${runId} channel
       },
+      // Webhook endpoint for n8n transcript integration
+      {
+        path: "/api/webhooks/transcript",
+        method: "POST",
+        createHandler: async ({ mastra }) => {
+          return async (c) => {
+            const logger = mastra.getLogger();
+            logger?.info("🔗 [METIY Webhook] Received n8n transcript request");
+            
+            try {
+              const body = await c.req.json();
+              
+              // Validate required fields
+              if (!body.transcript || !body.slackUserId) {
+                logger?.error("❌ [METIY Webhook] Missing required fields", { body });
+                return c.json({
+                  success: false,
+                  error: "Missing required fields: transcript and slackUserId are required",
+                }, 400);
+              }
+              
+              const {
+                transcript,
+                slackUserId,
+                source = "n8n",
+                meetingId,
+                meetingTitle,
+                timestamp,
+              } = body;
+              
+              logger?.info("📥 [METIY Webhook] Processing transcript", {
+                source,
+                meetingId,
+                transcriptLength: transcript.length,
+                slackUserId,
+              });
+              
+              // Create a unique thread ID for this webhook request
+              const threadId = `webhook/${source}/${meetingId || Date.now()}`;
+              
+              // Prepare message for agent
+              const message = `New transcript received from ${source}${meetingTitle ? ` - "${meetingTitle}"` : ""}${meetingId ? ` (ID: ${meetingId})` : ""}${timestamp ? ` at ${timestamp}` : ""}:\n\n${transcript}`;
+              
+              // Start METIY workflow
+              const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
+              const result = await run.start({
+                inputData: {
+                  message,
+                  threadId,
+                  slackUserId,
+                  slackChannel: slackUserId, // DM channel is the user ID
+                  threadTs: undefined, // Start new thread in DM
+                },
+              });
+              
+              logger?.info("✅ [METIY Webhook] Workflow started successfully", {
+                status: result?.status,
+              });
+              
+              return c.json({
+                success: true,
+                message: "Transcript queued for processing",
+                status: result?.status,
+              });
+              
+            } catch (error) {
+              logger?.error("❌ [METIY Webhook] Error processing request", {
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+              
+              return c.json({
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+              }, 500);
+            }
+          };
+        },
+      },
       // Register Slack trigger for METIY
       ...registerSlackTrigger({
         triggerType: "slack/message.channels",
