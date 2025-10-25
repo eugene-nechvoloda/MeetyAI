@@ -6,7 +6,6 @@
 
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import pdf from "pdf-parse";
 import { createLogger } from "../utils/logger";
 
 export const extractTranscriptTool = createTool({
@@ -45,7 +44,9 @@ export const extractTranscriptTool = createTool({
         logger.progress("Extracting text from PDF...");
         
         try {
-          const pdfData = await pdf(fileBuffer);
+          // Dynamic import for pdf-parse
+          const pdfParse = (await import("pdf-parse")).default;
+          const pdfData = await pdfParse(fileBuffer);
           extractedText = pdfData.text;
           pageCount = pdfData.numpages;
           

@@ -76,6 +76,7 @@ export const transcribeAudioTool = createTool({
       const tmpDir = "/tmp/metiy";
       await fs.mkdir(tmpDir, { recursive: true });
       const tmpFilePath = path.join(tmpDir, `upload_${Date.now()}_${fileName}`);
+      let audioFilePath = tmpFilePath;
       
       try {
         await fs.writeFile(tmpFilePath, fileBuffer);
@@ -83,8 +84,6 @@ export const transcribeAudioTool = createTool({
         
         // Check if video file - extract audio if needed
         const isVideo = fileType.includes("video") || [".mp4", ".mov", ".avi", ".mkv", ".webm"].some(ext => fileName.toLowerCase().endsWith(ext));
-        
-        let audioFilePath = tmpFilePath;
         
         if (isVideo) {
           logger.progress("Video file detected, extracting audio...");

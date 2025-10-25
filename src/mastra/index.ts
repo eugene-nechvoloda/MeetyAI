@@ -9,8 +9,11 @@ import { z } from "zod";
 
 import { sharedPostgresStorage } from "./storage";
 import { inngest, inngestServe } from "./inngest";
-import { exampleWorkflow } from "./workflows/exampleWorkflow";
-import { exampleAgent } from "./agents/exampleAgent";
+import { metiyWorkflow } from "./workflows/metiyWorkflow";
+import { metiyAgent } from "./agents/metiyAgent";
+import { registerSlackTrigger } from "../triggers/slackTriggers";
+import type { Mastra as MastraType } from "@mastra/core";
+import type { TriggerInfoSlackOnNewMessage } from "../triggers/slackTriggers";
 
 class ProductionPinoLogger extends MastraLogger {
   protected logger: pino.Logger;
@@ -55,10 +58,10 @@ class ProductionPinoLogger extends MastraLogger {
 
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,
-  // Register your workflows here
-  workflows: {},
-  // Register your agents here
-  agents: {},
+  // Register METIY workflow
+  workflows: { metiyWorkflow },
+  // Register METIY agent
+  agents: { metiyAgent },
   mcpServers: {
     allTools: new MCPServer({
       name: "allTools",
@@ -126,6 +129,53 @@ export const mastra = new Mastra({
         // 3. Establishing a publish-subscribe system for real-time monitoring
         //    through the workflow:${workflowId}:${runId} channel
       },
+      // Register Slack trigger for METIY
+      ...registerSlackTrigger({
+        triggerType: "slack/message.channels",
+        handler: async (mastra: MastraType, triggerInfo: TriggerInfoSlackOnNewMessage) => {
+          const logger = mastra.getLogger();
+          logger?.info("📝 [METIY Slack Trigger] Received Slack event", { triggerInfo });
+          
+          // Check if this is a DM or mention
+          const isDirectMessage = triggerInfo.payload?.event?.channel_type === "im";
+          const botUserId = triggerInfo.payload?.authed_users?.[0];
+          const isMention = triggerInfo.payload?.event?.text?.includes(`<@${botUserId}>`);
+          const shouldRespond = isDirectMessage || isMention;
+          
+          if (!shouldRespond) {
+            logger?.info("📝 [METIY Slack Trigger] Ignoring message (not DM or mention)");
+            return null;
+          }
+          
+          // Extract message details
+          const message = triggerInfo.payload?.event?.text || "";
+          const channel = triggerInfo.payload?.event?.channel || "";
+          const userId = triggerInfo.payload?.event?.user || "";
+          const threadTs = triggerInfo.payload?.event?.thread_ts || triggerInfo.payload?.event?.ts;
+          const eventTs = triggerInfo.payload?.event?.ts || "";
+          
+          // Create thread ID for memory
+          const threadId = `slack/${threadTs}`;
+          
+          logger?.info("📝 [METIY Slack Trigger] Starting workflow", {
+            channel,
+            userId,
+            threadId,
+          });
+          
+          // Start METIY workflow
+          const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
+          return await run.start({
+            inputData: {
+              message,
+              threadId,
+              slackUserId: userId,
+              slackChannel: channel,
+              threadTs: eventTs,
+            },
+          });
+        },
+      }),
     ],
   },
   logger:
