@@ -221,7 +221,7 @@ export const mastra = new Mastra({
               const triggerId = formData.get("trigger_id") as string;
               const userId = formData.get("user_id") as string;
               
-              const { slack } = await (await import("../../triggers/slackTriggers")).getClient();
+              const { slack } = await (await import("../triggers/slackTriggers")).getClient();
               
               // Open Block Kit modal for transcript submission
               await slack.views.open({
@@ -326,7 +326,7 @@ export const mastra = new Mastra({
               const triggerId = formData.get("trigger_id") as string;
               const userId = formData.get("user_id") as string;
               
-              const { slack } = await (await import("../../triggers/slackTriggers")).getClient();
+              const { slack } = await (await import("../triggers/slackTriggers")).getClient();
               
               // Open Block Kit modal for settings
               await slack.views.open({
@@ -529,7 +529,7 @@ export const mastra = new Mastra({
                   const researchDepth = parseFloat(values.research_depth_block?.research_depth?.selected_option?.value || "0.7");
                   
                   // Save settings to database
-                  const { getPrisma } = await import("../utils/database");
+                  const { getPrisma } = await import("./utils/database");
                   const prisma = getPrisma();
                   
                   await prisma.userSetting.upsert({
