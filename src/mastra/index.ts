@@ -312,7 +312,7 @@ export const mastra = new Mastra({
           };
         },
       },
-      // Slack slash command: /meetyai settings
+      // Slack slash command: /meetyai settings - Main settings menu
       {
         path: "/api/slack/commands/settings",
         method: "POST",
@@ -323,146 +323,116 @@ export const mastra = new Mastra({
             
             try {
               const formData = await c.req.formData();
-              const triggerId = formData.get("trigger_id") as string;
               const userId = formData.get("user_id") as string;
               
               const { slack } = await (await import("../triggers/slackTriggers")).getClient();
+              const { getPrisma } = await import("./utils/database");
+              const prisma = getPrisma();
               
-              // Open Block Kit modal for settings
-              await slack.views.open({
-                trigger_id: triggerId,
-                view: {
-                  type: "modal",
-                  callback_id: "meetyai_settings_modal",
-                  title: {
-                    type: "plain_text",
-                    text: "MeetyAI Settings",
-                  },
-                  submit: {
-                    type: "plain_text",
-                    text: "Save",
-                  },
-                  close: {
-                    type: "plain_text",
-                    text: "Cancel",
-                  },
-                  blocks: [
-                    {
-                      type: "section",
-                      text: {
-                        type: "mrkdwn",
-                        text: "*Configure your AI model and analysis preferences*",
-                      },
-                    },
-                    {
-                      type: "divider",
-                    },
-                    {
-                      type: "input",
-                      block_id: "model_provider_block",
-                      element: {
-                        type: "static_select",
-                        action_id: "model_provider",
-                        placeholder: {
-                          type: "plain_text",
-                          text: "Select AI provider",
-                        },
-                        options: [
-                          {
-                            text: { type: "plain_text", text: "Anthropic Claude" },
-                            value: "anthropic",
-                          },
-                          {
-                            text: { type: "plain_text", text: "OpenAI GPT" },
-                            value: "openai",
-                          },
-                        ],
-                        initial_option: {
-                          text: { type: "plain_text", text: "Anthropic Claude" },
-                          value: "anthropic",
-                        },
-                      },
-                      label: {
-                        type: "plain_text",
-                        text: "AI Provider",
-                      },
-                    },
-                    {
-                      type: "input",
-                      block_id: "api_key_block",
-                      optional: true,
-                      element: {
-                        type: "plain_text_input",
-                        action_id: "api_key",
-                        placeholder: {
-                          type: "plain_text",
-                          text: "sk-ant-... or sk-...",
-                        },
-                      },
-                      label: {
-                        type: "plain_text",
-                        text: "API Key (optional - leave blank to use default)",
-                      },
-                    },
-                    {
-                      type: "input",
-                      block_id: "research_depth_block",
-                      element: {
-                        type: "static_select",
-                        action_id: "research_depth",
-                        placeholder: {
-                          type: "plain_text",
-                          text: "Select analysis depth",
-                        },
-                        options: [
-                          {
-                            text: { type: "plain_text", text: "Quick (0.3) - Fast, fewer insights" },
-                            value: "0.3",
-                          },
-                          {
-                            text: { type: "plain_text", text: "Standard (0.5) - Balanced" },
-                            value: "0.5",
-                          },
-                          {
-                            text: { type: "plain_text", text: "Deep (0.7) - Thorough, more insights" },
-                            value: "0.7",
-                          },
-                          {
-                            text: { type: "plain_text", text: "Maximum (1.0) - Most thorough" },
-                            value: "1.0",
-                          },
-                        ],
-                        initial_option: {
-                          text: { type: "plain_text", text: "Deep (0.7) - Thorough, more insights" },
-                          value: "0.7",
-                        },
-                      },
-                      label: {
-                        type: "plain_text",
-                        text: "Research Depth",
-                      },
-                    },
-                    {
-                      type: "context",
-                      elements: [
-                        {
-                          type: "mrkdwn",
-                          text: "🔐 API keys are encrypted and stored securely",
-                        },
-                      ],
-                    },
-                  ],
-                },
+              // Get current settings
+              const userSettings = await prisma.userSetting.findUnique({
+                where: { user_id: userId },
               });
               
-              logger?.info("✅ [MeetyAI Slack Command] Settings modal opened");
+              const modelConfigs = await prisma.modelConfig.findMany({
+                where: { user_id: userId },
+              });
+              
+              const exportConfigs = await prisma.exportConfig.findMany({
+                where: { user_id: userId },
+              });
+              
+              // Send ephemeral message with settings menu
+              await slack.chat.postEphemeral({
+                channel: userId,
+                user: userId,
+                text: "⚙️ *MeetyAI Settings*",
+                blocks: [
+                  {
+                    type: "header",
+                    text: {
+                      type: "plain_text",
+                      text: "⚙️ MeetyAI Settings",
+                    },
+                  },
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: "Configure your MeetyAI experience:",
+                    },
+                  },
+                  {
+                    type: "divider",
+                  },
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `*🤖 Model Configuration*\n${modelConfigs.length} model(s) configured\nChoose and customize AI models for analysis`,
+                    },
+                    accessory: {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: "Configure Models",
+                      },
+                      action_id: "open_model_settings",
+                      value: userId,
+                    },
+                  },
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `*📤 Export Destinations*\n${exportConfigs.length} destination(s) configured\nSet up Linear, Airtable, and field mappings`,
+                    },
+                    accessory: {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: "Configure Exports",
+                      },
+                      action_id: "open_export_settings",
+                      value: userId,
+                    },
+                  },
+                  {
+                    type: "section",
+                    text: {
+                      type: "mrkdwn",
+                      text: `*⚡ General Preferences*\nResearch depth: ${userSettings?.research_depth || 0.7}\nConfigure analysis settings and notifications`,
+                    },
+                    accessory: {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: "General Settings",
+                      },
+                      action_id: "open_general_settings",
+                      value: userId,
+                    },
+                  },
+                  {
+                    type: "context",
+                    elements: [
+                      {
+                        type: "mrkdwn",
+                        text: "💡 *Tip:* All sensitive data is encrypted and stored securely",
+                      },
+                    ],
+                  },
+                ],
+              });
+              
+              logger?.info("✅ [MeetyAI Slack Command] Settings menu displayed");
               return c.text("", 200);
               
             } catch (error) {
-              logger?.error("❌ [MeetyAI Slack Command] Error opening settings modal", {
+              logger?.error("❌ [MeetyAI Slack Command] Error displaying settings menu", {
                 error: error instanceof Error ? error.message : "Unknown error",
               });
-              return c.json({ error: "Failed to open settings modal" }, 500);
+              return c.json({ error: "Failed to display settings menu" }, 500);
             }
           };
         },
@@ -483,7 +453,352 @@ export const mastra = new Mastra({
               logger?.info("🎯 [MeetyAI Modal] Received interaction", {
                 type: payload.type,
                 callbackId: payload.view?.callback_id,
+                actionId: payload.actions?.[0]?.action_id,
               });
+              
+              // Handle button clicks to open specific settings modals
+              if (payload.type === "block_actions") {
+                const action = payload.actions?.[0];
+                const userId = payload.user.id;
+                const { slack } = await (await import("../triggers/slackTriggers")).getClient();
+                const { getPrisma } = await import("./utils/database");
+                const prisma = getPrisma();
+                
+                if (action.action_id === "open_model_settings") {
+                  // Get existing model configs
+                  const modelConfigs = await prisma.modelConfig.findMany({
+                    where: { user_id: userId },
+                  });
+                  
+                  const defaultModel = modelConfigs.find(m => m.is_default);
+                  
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "model_config_modal",
+                      title: { type: "plain_text", text: "Model Configuration" },
+                      submit: { type: "plain_text", text: "Save" },
+                      close: { type: "plain_text", text: "Cancel" },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Configure AI Model for Analysis*",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "input",
+                          block_id: "model_provider",
+                          element: {
+                            type: "static_select",
+                            action_id: "provider",
+                            placeholder: { type: "plain_text", text: "Select provider" },
+                            options: [
+                              { text: { type: "plain_text", text: "Anthropic Claude" }, value: "anthropic" },
+                              { text: { type: "plain_text", text: "OpenAI GPT" }, value: "openai" },
+                              { text: { type: "plain_text", text: "OpenRouter" }, value: "openrouter" },
+                            ],
+                            initial_option: defaultModel
+                              ? { text: { type: "plain_text", text: defaultModel.provider === "anthropic" ? "Anthropic Claude" : defaultModel.provider === "openai" ? "OpenAI GPT" : "OpenRouter" }, value: defaultModel.provider }
+                              : { text: { type: "plain_text", text: "Anthropic Claude" }, value: "anthropic" },
+                          },
+                          label: { type: "plain_text", text: "AI Provider" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "model_name",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "name",
+                            placeholder: { type: "plain_text", text: "e.g., claude-3-5-sonnet-20241022, gpt-4o" },
+                            initial_value: defaultModel?.model_name || "",
+                          },
+                          label: { type: "plain_text", text: "Model Name" },
+                          optional: true,
+                        },
+                        {
+                          type: "input",
+                          block_id: "api_key",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "key",
+                            placeholder: { type: "plain_text", text: "sk-ant-... or sk-..." },
+                          },
+                          label: { type: "plain_text", text: "API Key (optional - leave blank to use default)" },
+                          optional: true,
+                        },
+                        {
+                          type: "context",
+                          elements: [
+                            { type: "mrkdwn", text: "🔐 API keys are encrypted with AES-256-GCM" },
+                          ],
+                        },
+                      ],
+                    },
+                  });
+                  
+                  return c.json({ ok: true });
+                  
+                } else if (action.action_id === "open_export_settings") {
+                  // Get existing export configs
+                  const exportConfigs = await prisma.exportConfig.findMany({
+                    where: { user_id: userId },
+                  });
+                  
+                  const linearConfig = exportConfigs.find(e => e.provider === "linear");
+                  
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "export_config_modal",
+                      title: { type: "plain_text", text: "Export Configuration" },
+                      submit: { type: "plain_text", text: "Save" },
+                      close: { type: "plain_text", text: "Cancel" },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Configure Export Destinations*\nSet up where insights should be exported",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_provider",
+                          element: {
+                            type: "static_select",
+                            action_id: "provider",
+                            placeholder: { type: "plain_text", text: "Select destination" },
+                            options: [
+                              { text: { type: "plain_text", text: "Linear" }, value: "linear" },
+                              { text: { type: "plain_text", text: "Airtable" }, value: "airtable" },
+                              { text: { type: "plain_text", text: "Custom Webhook" }, value: "webhook" },
+                            ],
+                            initial_option: { text: { type: "plain_text", text: "Linear" }, value: "linear" },
+                          },
+                          label: { type: "plain_text", text: "Export Destination" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_enabled",
+                          element: {
+                            type: "radio_buttons",
+                            action_id: "enabled",
+                            options: [
+                              { text: { type: "plain_text", text: "Enabled" }, value: "true" },
+                              { text: { type: "plain_text", text: "Disabled" }, value: "false" },
+                            ],
+                            initial_option: linearConfig?.enabled !== false
+                              ? { text: { type: "plain_text", text: "Enabled" }, value: "true" }
+                              : { text: { type: "plain_text", text: "Disabled" }, value: "false" },
+                          },
+                          label: { type: "plain_text", text: "Status" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_api_key",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "api_key",
+                            placeholder: { type: "plain_text", text: "Enter API key or access token" },
+                          },
+                          label: { type: "plain_text", text: "API Key / Access Token" },
+                          optional: true,
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_team_id",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "team_id",
+                            placeholder: { type: "plain_text", text: "e.g., team-abc123 (for Linear)" },
+                            initial_value: linearConfig?.team_id || "",
+                          },
+                          label: { type: "plain_text", text: "Team/Workspace ID" },
+                          optional: true,
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Field Mapping*\nMap MeetyAI fields to destination fields:",
+                          },
+                        },
+                        {
+                          type: "input",
+                          block_id: "field_mapping_title",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "title",
+                            placeholder: { type: "plain_text", text: "e.g., title, name" },
+                            initial_value: "title",
+                          },
+                          label: { type: "plain_text", text: "Insight Title → " },
+                          optional: true,
+                        },
+                        {
+                          type: "input",
+                          block_id: "field_mapping_description",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "description",
+                            placeholder: { type: "plain_text", text: "e.g., description, notes" },
+                            initial_value: "description",
+                          },
+                          label: { type: "plain_text", text: "Insight Description → " },
+                          optional: true,
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Data Filtering*",
+                          },
+                        },
+                        {
+                          type: "input",
+                          block_id: "min_confidence",
+                          element: {
+                            type: "static_select",
+                            action_id: "confidence",
+                            placeholder: { type: "plain_text", text: "Minimum confidence" },
+                            options: [
+                              { text: { type: "plain_text", text: "Any (0.0+)" }, value: "0.0" },
+                              { text: { type: "plain_text", text: "Low (0.3+)" }, value: "0.3" },
+                              { text: { type: "plain_text", text: "Medium (0.5+)" }, value: "0.5" },
+                              { text: { type: "plain_text", text: "High (0.7+)" }, value: "0.7" },
+                              { text: { type: "plain_text", text: "Very High (0.9+)" }, value: "0.9" },
+                            ],
+                            initial_option: { text: { type: "plain_text", text: `High (${linearConfig?.min_confidence || 0.7}+)` }, value: String(linearConfig?.min_confidence || 0.7) },
+                          },
+                          label: { type: "plain_text", text: "Minimum Confidence Threshold" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "types_filter",
+                          element: {
+                            type: "checkboxes",
+                            action_id: "types",
+                            options: [
+                              { text: { type: "plain_text", text: "Pains" }, value: "pain" },
+                              { text: { type: "plain_text", text: "Feature Requests" }, value: "feature_request" },
+                              { text: { type: "plain_text", text: "Gains" }, value: "gain" },
+                              { text: { type: "plain_text", text: "Objections" }, value: "objection" },
+                            ],
+                            initial_options: [
+                              { text: { type: "plain_text", text: "Pains" }, value: "pain" },
+                              { text: { type: "plain_text", text: "Feature Requests" }, value: "feature_request" },
+                              { text: { type: "plain_text", text: "Gains" }, value: "gain" },
+                              { text: { type: "plain_text", text: "Objections" }, value: "objection" },
+                            ],
+                          },
+                          label: { type: "plain_text", text: "Export These Insight Types" },
+                          optional: true,
+                        },
+                        {
+                          type: "context",
+                          elements: [
+                            { type: "mrkdwn", text: "💡 Only insights matching filters will be exported" },
+                          ],
+                        },
+                      ],
+                    },
+                  });
+                  
+                  return c.json({ ok: true });
+                  
+                } else if (action.action_id === "open_general_settings") {
+                  // Get existing user settings
+                  const userSettings = await prisma.userSetting.findUnique({
+                    where: { user_id: userId },
+                  });
+                  
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "general_settings_modal",
+                      title: { type: "plain_text", text: "General Settings" },
+                      submit: { type: "plain_text", text: "Save" },
+                      close: { type: "plain_text", text: "Cancel" },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*General Preferences*",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "input",
+                          block_id: "research_depth",
+                          element: {
+                            type: "static_select",
+                            action_id: "depth",
+                            placeholder: { type: "plain_text", text: "Select analysis depth" },
+                            options: [
+                              { text: { type: "plain_text", text: "Quick (0.3) - Fast, fewer insights" }, value: "0.3" },
+                              { text: { type: "plain_text", text: "Standard (0.5) - Balanced" }, value: "0.5" },
+                              { text: { type: "plain_text", text: "Deep (0.7) - Thorough, more insights" }, value: "0.7" },
+                              { text: { type: "plain_text", text: "Maximum (1.0) - Most thorough" }, value: "1.0" },
+                            ],
+                            initial_option: { text: { type: "plain_text", text: `Deep (${userSettings?.research_depth || 0.7})` }, value: String(userSettings?.research_depth || 0.7) },
+                          },
+                          label: { type: "plain_text", text: "Research Depth" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "auto_approve",
+                          element: {
+                            type: "radio_buttons",
+                            action_id: "approve",
+                            options: [
+                              { text: { type: "plain_text", text: "Auto-approve insights" }, value: "true" },
+                              { text: { type: "plain_text", text: "Manual approval required" }, value: "false" },
+                            ],
+                            initial_option: userSettings?.auto_approve
+                              ? { text: { type: "plain_text", text: "Auto-approve insights" }, value: "true" }
+                              : { text: { type: "plain_text", text: "Manual approval required" }, value: "false" },
+                          },
+                          label: { type: "plain_text", text: "Insight Approval" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "notifications",
+                          element: {
+                            type: "checkboxes",
+                            action_id: "notif",
+                            options: [
+                              { text: { type: "plain_text", text: "Notify on analysis completion" }, value: "completion" },
+                              { text: { type: "plain_text", text: "Notify on failures" }, value: "failure" },
+                            ],
+                            initial_options: [
+                              { text: { type: "plain_text", text: "Notify on analysis completion" }, value: "completion" },
+                              { text: { type: "plain_text", text: "Notify on failures" }, value: "failure" },
+                            ],
+                          },
+                          label: { type: "plain_text", text: "Notifications" },
+                          optional: true,
+                        },
+                      ],
+                    },
+                  });
+                  
+                  return c.json({ ok: true });
+                }
+              }
               
               if (payload.type === "view_submission") {
                 const callbackId = payload.view.callback_id;
@@ -574,6 +889,143 @@ export const mastra = new Mastra({
                   }
                   
                   logger?.info("✅ [MeetyAI Modal] Settings saved");
+                  return c.json({ response_action: "clear" });
+                  
+                } else if (callbackId === "model_config_modal") {
+                  // Handle model configuration submission
+                  const { getPrisma } = await import("./utils/database");
+                  const { encrypt } = await import("./utils/encryption");
+                  const prisma = getPrisma();
+                  
+                  const provider = values.model_provider?.provider?.selected_option?.value;
+                  const modelName = values.model_name?.name?.value;
+                  const apiKey = values.api_key?.key?.value;
+                  
+                  if (!provider) {
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        model_provider: "Please select a provider",
+                      },
+                    });
+                  }
+                  
+                  const encryptedKey = apiKey ? encrypt(apiKey) : "";
+                  
+                  await prisma.modelConfig.upsert({
+                    where: {
+                      user_id_provider_label: {
+                        user_id: userId,
+                        provider,
+                        label: "default",
+                      },
+                    },
+                    create: {
+                      user_id: userId,
+                      provider,
+                      label: "default",
+                      api_key_encrypted: encryptedKey,
+                      model_name: modelName || "",
+                      is_default: true,
+                      model_type: "analysis",
+                    },
+                    update: {
+                      api_key_encrypted: encryptedKey || undefined,
+                      model_name: modelName || "",
+                    },
+                  });
+                  
+                  logger?.info("✅ [MeetyAI Modal] Model config saved", { provider, modelName });
+                  return c.json({ response_action: "clear" });
+                  
+                } else if (callbackId === "export_config_modal") {
+                  // Handle export configuration submission
+                  const { getPrisma } = await import("./utils/database");
+                  const { encrypt } = await import("./utils/encryption");
+                  const prisma = getPrisma();
+                  
+                  const provider = values.export_provider?.provider?.selected_option?.value;
+                  const enabled = values.export_enabled?.enabled?.selected_option?.value === "true";
+                  const apiKey = values.export_api_key?.api_key?.value;
+                  const teamId = values.export_team_id?.team_id?.value;
+                  const titleField = values.field_mapping_title?.title?.value || "title";
+                  const descField = values.field_mapping_description?.description?.value || "description";
+                  const minConfidence = parseFloat(values.min_confidence?.confidence?.selected_option?.value || "0.7");
+                  const typesFilter = values.types_filter?.types?.selected_options?.map((o: any) => o.value) || [];
+                  
+                  if (!provider) {
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        export_provider: "Please select an export destination",
+                      },
+                    });
+                  }
+                  
+                  const credentials = apiKey ? JSON.stringify({ api_key: apiKey }) : "";
+                  const encryptedCreds = credentials ? encrypt(credentials) : "";
+                  
+                  const fieldMapping = {
+                    title: titleField,
+                    description: descField,
+                  };
+                  
+                  await prisma.exportConfig.upsert({
+                    where: {
+                      id: `${userId}-${provider}`,
+                    },
+                    create: {
+                      id: `${userId}-${provider}`,
+                      user_id: userId,
+                      provider,
+                      label: provider,
+                      enabled,
+                      credentials_encrypted: encryptedCreds,
+                      team_id: teamId,
+                      field_mapping: fieldMapping,
+                      min_confidence: minConfidence,
+                      types_filter: typesFilter,
+                    },
+                    update: {
+                      enabled,
+                      credentials_encrypted: encryptedCreds || undefined,
+                      team_id: teamId,
+                      field_mapping: fieldMapping,
+                      min_confidence: minConfidence,
+                      types_filter: typesFilter,
+                    },
+                  });
+                  
+                  logger?.info("✅ [MeetyAI Modal] Export config saved", { provider, enabled });
+                  return c.json({ response_action: "clear" });
+                  
+                } else if (callbackId === "general_settings_modal") {
+                  // Handle general settings submission
+                  const { getPrisma } = await import("./utils/database");
+                  const prisma = getPrisma();
+                  
+                  const researchDepth = parseFloat(values.research_depth?.depth?.selected_option?.value || "0.7");
+                  const autoApprove = values.auto_approve?.approve?.selected_option?.value === "true";
+                  const notifications = values.notifications?.notif?.selected_options?.map((o: any) => o.value) || [];
+                  
+                  await prisma.userSetting.upsert({
+                    where: { user_id: userId },
+                    create: {
+                      user_id: userId,
+                      research_depth: researchDepth,
+                      auto_approve: autoApprove,
+                      notify_on_completion: notifications.includes("completion"),
+                      notify_on_failure: notifications.includes("failure"),
+                    },
+                    update: {
+                      research_depth: researchDepth,
+                      auto_approve: autoApprove,
+                      notify_on_completion: notifications.includes("completion"),
+                      notify_on_failure: notifications.includes("failure"),
+                    },
+                  });
+                  
+                  logger?.info("✅ [MeetyAI Modal] General settings saved");
                   return c.json({ response_action: "clear" });
                 }
               }
