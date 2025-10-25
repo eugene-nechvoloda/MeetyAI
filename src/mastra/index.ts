@@ -860,11 +860,8 @@ export const mastra = new Mastra({
                   
                   // If API key provided, save encrypted
                   if (apiKey && modelProvider) {
-                    const crypto = await import("crypto");
-                    const encryptionKey = process.env.ENCRYPTION_KEY || "default-key-change-in-production";
-                    const cipher = crypto.createCipher("aes-256-cbc", encryptionKey);
-                    let encrypted = cipher.update(apiKey, "utf8", "hex");
-                    encrypted += cipher.final("hex");
+                    const { encrypt } = await import("./utils/encryption");
+                    const encrypted = encrypt(apiKey);
                     
                     await prisma.modelConfig.upsert({
                       where: {

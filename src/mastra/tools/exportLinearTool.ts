@@ -59,6 +59,17 @@ export const exportLinearTool = createTool({
       const linearIssueIds: string[] = [];
       let failedCount = 0;
       
+      // Get field mapping from config (default to 'title'/'description' if not set)
+      const fieldMapping = (config.field_mapping as any) || { title: "title", description: "description" };
+      const minConfidence = config.min_confidence ?? 0.7;
+      const typesFilter = (config.types_filter as string[]) || [];
+      
+      logger.info("Applying export configuration", {
+        fieldMapping,
+        minConfidence,
+        typesFilter,
+      });
+      
       // Get insights
       const insights = await prisma.insight.findMany({
         where: {
@@ -71,13 +82,58 @@ export const exportLinearTool = createTool({
       
       for (const insight of insights) {
         try {
-          // Create Linear issue
-          const issue = await linear.createIssue({
+          // Apply confidence filter
+          if (insight.confidence < minConfidence) {
+            logger.info("Skipping insight - below confidence threshold", {
+              insightId: insight.id,
+              confidence: insight.confidence,
+              minConfidence,
+            });
+            continue;
+          }
+          
+          // Apply type filter (if configured)
+          if (typesFilter.length > 0 && !typesFilter.includes(insight.type)) {
+            logger.info("Skipping insight - type not in filter", {
+              insightId: insight.id,
+              type: insight.type,
+              allowedTypes: typesFilter,
+            });
+            continue;
+          }
+          
+          // Check for duplicates (skip if already exported to Linear)
+          const exportDest = insight.export_destinations as any;
+          if (exportDest?.provider === "linear" && exportDest?.id) {
+            logger.info("Skipping insight - already exported to Linear", {
+              insightId: insight.id,
+              linearIssueId: exportDest.id,
+            });
+            continue;
+          }
+          
+          // Build issue data using field mapping
+          const issueData: any = {
             teamId: config.team_id || "",
-            title: insight.title,
-            description: `${insight.description}\n\n**Evidence:**\n${JSON.stringify(insight.evidence_quotes, null, 2)}\n\n**Confidence:** ${insight.confidence}\n**Source:** ${insight.transcript.title}`,
-            priority: insight.confidence > 0.8 ? 1 : 2,
+          };
+          
+          // Map title field
+          issueData[fieldMapping.title || "title"] = insight.title;
+          
+          // Map description field with evidence
+          const descriptionContent = `${insight.description}\n\n**Evidence:**\n${JSON.stringify(insight.evidence_quotes, null, 2)}\n\n**Confidence:** ${insight.confidence}\n**Source:** ${insight.transcript.title}`;
+          issueData[fieldMapping.description || "description"] = descriptionContent;
+          
+          // Set priority based on confidence
+          issueData.priority = insight.confidence > 0.8 ? 1 : 2;
+          
+          logger.info("Creating Linear issue with mapped fields", {
+            insightId: insight.id,
+            issueData,
           });
+          
+          // Create Linear issue
+          const issue = await linear.createIssue(issueData);
           
           linearIssueIds.push(issue.issue?.id || "");
           
