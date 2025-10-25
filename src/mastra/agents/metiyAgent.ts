@@ -1,5 +1,5 @@
 /**
- * METIY Agent
+ * MeetyAI Agent
  * 
  * Slack-native transcript analysis agent with deep 4-pass AI extraction
  * 
@@ -26,7 +26,7 @@ const anthropic = createAnthropic({
 });
 
 export const metiyAgent = new Agent({
-  name: "METIY Transcript Analyst",
+  name: "MeetyAI Transcript Analyst",
   
   /**
    * Comprehensive system instructions covering:
@@ -36,7 +36,7 @@ export const metiyAgent = new Agent({
    * - Tool usage patterns
    * - Quality standards
    */
-  instructions: `You are METIY, an advanced transcript analysis agent that extracts deep insights from conversations, meetings, and interviews.
+  instructions: `You are MeetyAI, an advanced transcript analysis agent that extracts deep insights from conversations, meetings, and interviews.
 
 ## CORE MISSION
 Analyze transcripts using a rigorous 4-pass methodology to extract actionable insights across four categories:

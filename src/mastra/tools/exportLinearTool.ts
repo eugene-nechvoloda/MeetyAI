@@ -12,7 +12,7 @@ import { getPrisma } from "../utils/database";
 
 export const exportLinearTool = createTool({
   id: "export-to-linear",
-  description: "Exports approved insights to Linear as issues. Maps METIY insight fields to Linear issue fields based on configuration.",
+  description: "Exports approved insights to Linear as issues. Maps MeetyAI insight fields to Linear issue fields based on configuration.",
   
   inputSchema: z.object({
     insightIds: z.array(z.string()).describe("Array of insight IDs to export"),

@@ -38,7 +38,7 @@ const insightSchema = z.object({
 
 export const analyzeTool = createTool({
   id: "analyze-four-pass-extraction",
-  description: "Performs deep 4-pass analysis on transcript to extract insights (pains, features, gains, objections) with verbatim evidence. This is the core analysis tool that implements METIY's research depth of 0.7.",
+  description: "Performs deep 4-pass analysis on transcript to extract insights (pains, features, gains, objections) with verbatim evidence. This is the core analysis tool that implements MeetyAI's research depth of 0.7.",
   
   inputSchema: z.object({
     transcriptId: z.string().describe("Database ID of the transcript to analyze"),

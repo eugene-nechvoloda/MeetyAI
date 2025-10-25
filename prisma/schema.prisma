@@ -1,4 +1,4 @@
-// METIY Database Schema
+// MeetyAI Database Schema
 // Slack-native transcript analysis system with AI-powered multi-pass extraction
 
 generator client {

@@ -1,5 +1,5 @@
 /**
- * METIY Workflow
+ * MeetyAI Workflow
  * 
  * Two-step workflow following Agent Stack architecture:
  * Step 1: Call agent.generate() with user message
@@ -14,7 +14,7 @@ import { metiyAgent } from "../agents/metiyAgent";
 import { getClient } from "../../triggers/slackTriggers";
 
 /**
- * Step 1: Use METIY Agent
+ * Step 1: Use MeetyAI Agent
  * - Receives message from Slack
  * - Calls agent.generate() with message and thread context
  * - Agent orchestrates all tools (extract, analyze, save, etc.)
@@ -22,7 +22,7 @@ import { getClient } from "../../triggers/slackTriggers";
  */
 const useAgentStep = createStep({
   id: "use-metiy-agent",
-  description: "Processes user request through METIY agent",
+  description: "Processes user request through MeetyAI agent",
   
   inputSchema: z.object({
     message: z.string().describe("User message from Slack"),
@@ -43,7 +43,7 @@ const useAgentStep = createStep({
     const logger = mastra?.getLogger();
     const { message, threadId, slackUserId, slackChannel, threadTs } = inputData;
     
-    logger?.info("🤖 [METIY Workflow Step 1] Starting agent processing", {
+    logger?.info("🤖 [MeetyAI Workflow Step 1] Starting agent processing", {
       threadId,
       messageLength: message.length,
     });
@@ -64,7 +64,7 @@ const useAgentStep = createStep({
         }
       );
       
-      logger?.info("✅ [METIY Workflow Step 1] Agent processing complete", {
+      logger?.info("✅ [MeetyAI Workflow Step 1] Agent processing complete", {
         responseLength: text.length,
       });
       
@@ -76,7 +76,7 @@ const useAgentStep = createStep({
         threadTs,
       };
     } catch (error) {
-      logger?.error("❌ [METIY Workflow Step 1] Agent processing failed", {
+      logger?.error("❌ [MeetyAI Workflow Step 1] Agent processing failed", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
       
@@ -117,7 +117,7 @@ const sendReplyStep = createStep({
     const logger = mastra?.getLogger();
     const { response, channel, threadTs } = inputData;
     
-    logger?.info("💬 [METIY Workflow Step 2] Sending Slack reply", {
+    logger?.info("💬 [MeetyAI Workflow Step 2] Sending Slack reply", {
       channel,
       hasThread: !!threadTs,
     });
@@ -131,7 +131,7 @@ const sendReplyStep = createStep({
         thread_ts: threadTs,
       });
       
-      logger?.info("✅ [METIY Workflow Step 2] Slack reply sent", {
+      logger?.info("✅ [MeetyAI Workflow Step 2] Slack reply sent", {
         messageTs: result.ts,
       });
       
@@ -141,7 +141,7 @@ const sendReplyStep = createStep({
         messageTs: result.ts,
       };
     } catch (error) {
-      logger?.error("❌ [METIY Workflow Step 2] Failed to send Slack reply", {
+      logger?.error("❌ [MeetyAI Workflow Step 2] Failed to send Slack reply", {
         error: error instanceof Error ? error.message : "Unknown error",
       });
       
@@ -154,15 +154,15 @@ const sendReplyStep = createStep({
 });
 
 /**
- * METIY Workflow
+ * MeetyAI Workflow
  * 
- * Connects Slack messages to METIY agent
+ * Connects Slack messages to MeetyAI agent
  * Step 1: Agent processes request (ALL business logic)
  * Step 2: Reply sent to Slack (ONLY messaging)
  */
 export const metiyWorkflow = createWorkflow({
   id: "metiy-workflow",
-  description: "METIY transcript analysis workflow - connects Slack to METIY agent",
+  description: "MeetyAI transcript analysis workflow - connects Slack to MeetyAI agent",
   
   inputSchema: z.object({
     message: z.string().describe("User message from Slack"),

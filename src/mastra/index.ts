@@ -58,9 +58,9 @@ class ProductionPinoLogger extends MastraLogger {
 
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,
-  // Register METIY workflow
+  // Register MeetyAI workflow
   workflows: { metiyWorkflow },
-  // Register METIY agent
+  // Register MeetyAI agent
   agents: { metiyAgent },
   mcpServers: {
     allTools: new MCPServer({
@@ -136,14 +136,14 @@ export const mastra = new Mastra({
         createHandler: async ({ mastra }) => {
           return async (c) => {
             const logger = mastra.getLogger();
-            logger?.info("🔗 [METIY Webhook] Received n8n transcript request");
+            logger?.info("🔗 [MeetyAI Webhook] Received n8n transcript request");
             
             try {
               const body = await c.req.json();
               
               // Validate required fields
               if (!body.transcript || !body.slackUserId) {
-                logger?.error("❌ [METIY Webhook] Missing required fields", { body });
+                logger?.error("❌ [MeetyAI Webhook] Missing required fields", { body });
                 return c.json({
                   success: false,
                   error: "Missing required fields: transcript and slackUserId are required",
@@ -159,7 +159,7 @@ export const mastra = new Mastra({
                 timestamp,
               } = body;
               
-              logger?.info("📥 [METIY Webhook] Processing transcript", {
+              logger?.info("📥 [MeetyAI Webhook] Processing transcript", {
                 source,
                 meetingId,
                 transcriptLength: transcript.length,
@@ -172,7 +172,7 @@ export const mastra = new Mastra({
               // Prepare message for agent
               const message = `New transcript received from ${source}${meetingTitle ? ` - "${meetingTitle}"` : ""}${meetingId ? ` (ID: ${meetingId})` : ""}${timestamp ? ` at ${timestamp}` : ""}:\n\n${transcript}`;
               
-              // Start METIY workflow
+              // Start MeetyAI workflow
               const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
               const result = await run.start({
                 inputData: {
@@ -184,7 +184,7 @@ export const mastra = new Mastra({
                 },
               });
               
-              logger?.info("✅ [METIY Webhook] Workflow started successfully", {
+              logger?.info("✅ [MeetyAI Webhook] Workflow started successfully", {
                 status: result?.status,
               });
               
@@ -195,7 +195,7 @@ export const mastra = new Mastra({
               });
               
             } catch (error) {
-              logger?.error("❌ [METIY Webhook] Error processing request", {
+              logger?.error("❌ [MeetyAI Webhook] Error processing request", {
                 error: error instanceof Error ? error.message : "Unknown error",
               });
               
@@ -207,12 +207,12 @@ export const mastra = new Mastra({
           };
         },
       },
-      // Register Slack trigger for METIY
+      // Register Slack trigger for MeetyAI
       ...registerSlackTrigger({
         triggerType: "slack/message.channels",
         handler: async (mastra: MastraType, triggerInfo: TriggerInfoSlackOnNewMessage) => {
           const logger = mastra.getLogger();
-          logger?.info("📝 [METIY Slack Trigger] Received Slack event", { triggerInfo });
+          logger?.info("📝 [MeetyAI Slack Trigger] Received Slack event", { triggerInfo });
           
           // Check if this is a DM or mention
           const isDirectMessage = triggerInfo.payload?.event?.channel_type === "im";
@@ -221,7 +221,7 @@ export const mastra = new Mastra({
           const shouldRespond = isDirectMessage || isMention;
           
           if (!shouldRespond) {
-            logger?.info("📝 [METIY Slack Trigger] Ignoring message (not DM or mention)");
+            logger?.info("📝 [MeetyAI Slack Trigger] Ignoring message (not DM or mention)");
             return null;
           }
           
@@ -236,14 +236,14 @@ export const mastra = new Mastra({
           // Create thread ID for memory (consistent across messages in same thread)
           const threadId = `slack/${rootThreadTs}`;
           
-          logger?.info("📝 [METIY Slack Trigger] Starting workflow", {
+          logger?.info("📝 [MeetyAI Slack Trigger] Starting workflow", {
             channel,
             userId,
             threadId,
             rootThreadTs,
           });
           
-          // Start METIY workflow
+          // Start MeetyAI workflow
           const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
           return await run.start({
             inputData: {

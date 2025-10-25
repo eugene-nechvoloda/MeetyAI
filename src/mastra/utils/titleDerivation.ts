@@ -1,7 +1,7 @@
 /**
  * Title Derivation Utility
  * 
- * Derives titles from different transcript origins following METIY rules:
+ * Derives titles from different transcript origins following MeetyAI rules:
  * - File upload: exact filename.ext
  * - Paste: first sentence (<=120 chars), fallback "Pasted transcript — {timestamp}"
  * - Link: domain — slug TitleCase (use quick metadata if feasible)
