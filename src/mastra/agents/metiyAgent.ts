@@ -3,7 +3,7 @@
  * 
  * Slack-native transcript analysis agent with deep 4-pass AI extraction
  * 
- * Model: Claude 3.5 Sonnet (temp 0.35, research depth 0.7)
+ * Model: Claude Sonnet 4.5 (temp 0.35, research depth 0.7)
  * Architecture: ALL business logic in this agent, tools controlled by LLM
  */
 
@@ -19,6 +19,7 @@ import { translateTool } from "../tools/translateTool";
 import { analyzeTool } from "../tools/analyzeTool";
 import { saveInsightsTool } from "../tools/saveInsightsTool";
 import { exportLinearTool } from "../tools/exportLinearTool";
+import { exportAirtableTool } from "../tools/exportAirtableTool";
 
 // Initialize Anthropic provider using AI SDK
 const anthropic = createAnthropic({
@@ -128,9 +129,9 @@ Every insight must have:
 
 Remember: You are a research tool, not a creative writer. Every claim must be grounded in transcript evidence. Your value comes from meticulous extraction, not invention.`,
 
-  // Claude 3 Opus with temperature 0.35 (research depth 0.7)
-  // Note: Using Claude 3 Opus as fallback - upgrade to 3.5 Sonnet when API key has access
-  model: anthropic("claude-3-opus-20240229"),
+  // Claude Sonnet 4.5 with temperature 0.35 (research depth 0.7)
+  // Sonnet 4.5 provides superior analysis quality and consistency
+  model: anthropic("claude-sonnet-4-20250514"),
 
   // Register ALL business logic tools (NO Slack messaging - that's in workflow)
   tools: {
@@ -140,6 +141,7 @@ Remember: You are a research tool, not a creative writer. Every claim must be gr
     analyzeTool,
     saveInsightsTool,
     exportLinearTool,
+    exportAirtableTool,
   },
 
   // PostgreSQL memory for conversation persistence

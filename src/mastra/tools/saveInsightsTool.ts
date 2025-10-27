@@ -105,6 +105,41 @@ export const saveInsightsTool = createTool({
         }
       }
       
+      // Send notification to user
+      try {
+        const { getClient } = await import("../../triggers/slackTriggers");
+        const { slack } = await getClient();
+        
+        // Open DM channel with user
+        const dmChannel = await slack.conversations.open({
+          users: transcript.slack_user_id,
+        });
+        
+        if (!dmChannel.channel?.id) {
+          throw new Error("Failed to open DM channel");
+        }
+        
+        const notificationText = savedIds.length > 0
+          ? `✅ *Analysis Complete!*\n\nExtracted ${savedIds.length} insights from your transcript "${transcript.title}".\n\n💡 View them in the Insights tab of the MeetyAI app!`
+          : `⚠️ Analysis complete, but no insights were extracted from "${transcript.title}". Try uploading a different transcript.`;
+        
+        await slack.chat.postMessage({
+          channel: dmChannel.channel.id,
+          text: notificationText,
+        });
+        
+        logger.info("📬 Notification sent to user", {
+          userId: transcript.slack_user_id,
+          dmChannelId: dmChannel.channel.id,
+          insightCount: savedIds.length,
+        });
+      } catch (notificationError) {
+        // Don't fail the tool if notification fails
+        logger.error("Failed to send notification", {
+          error: notificationError instanceof Error ? notificationError.message : "Unknown",
+        });
+      }
+      
       logger.toolComplete("save-insights-to-database", {
         savedCount: savedIds.length,
         failedCount,

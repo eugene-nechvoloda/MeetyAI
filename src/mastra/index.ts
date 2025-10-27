@@ -437,6 +437,71 @@ export const mastra = new Mastra({
           };
         },
       },
+      // Slack App Home events handler
+      {
+        path: "/api/slack/events",
+        method: "POST",
+        createHandler: async ({ mastra }) => {
+          return async (c) => {
+            const logger = mastra.getLogger();
+            
+            try {
+              const body = await c.req.json();
+              
+              // Handle URL verification challenge
+              if (body.type === "url_verification") {
+                logger?.info("🔐 [Slack Events] URL verification challenge");
+                return c.json({ challenge: body.challenge });
+              }
+              
+              // Handle app_home_opened event
+              if (body.event?.type === "app_home_opened") {
+                logger?.info("🏠 [Slack App Home] User opened App Home", {
+                  user: body.event.user,
+                  tab: body.event.tab,
+                });
+                
+                const { slack } = await (await import("../triggers/slackTriggers")).getClient();
+                const userId = body.event.user;
+                const tab = body.event.tab || "home";
+                
+                // Import App Home view builders
+                const { buildHomeTab, buildTranscriptsTab, buildInsightsTab } = await import("./ui/appHomeViews");
+                
+                // Build the appropriate view based on selected tab
+                let view;
+                switch (tab) {
+                  case "messages":
+                    // Skip messages tab - not used
+                    return c.json({ ok: true });
+                  case "home":
+                  default:
+                    view = await buildHomeTab(userId);
+                    break;
+                }
+                
+                // Publish the view
+                await slack.views.publish({
+                  user_id: userId,
+                  view: view as any,
+                });
+                
+                logger?.info("✅ [Slack App Home] View published successfully");
+                return c.json({ ok: true });
+              }
+              
+              // Acknowledge other events
+              return c.json({ ok: true });
+              
+            } catch (error) {
+              logger?.error("❌ [Slack Events] Error handling event", {
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+              return c.json({ error: "Failed to handle event" }, 500);
+            }
+          };
+        },
+      },
       // Slack modal submissions handler
       {
         path: "/api/slack/interactivity",
@@ -797,6 +862,516 @@ export const mastra = new Mastra({
                   });
                   
                   return c.json({ ok: true });
+                  
+                } else if (action.action_id === "open_upload_modal") {
+                  logger?.info("📤 [App Home] Opening upload modal", { userId });
+                  
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "upload_transcript_modal",
+                      title: {
+                        type: "plain_text",
+                        text: "Upload Transcript",
+                      },
+                      submit: {
+                        type: "plain_text",
+                        text: "Analyze",
+                      },
+                      close: {
+                        type: "plain_text",
+                        text: "Cancel",
+                      },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "Submit a transcript for AI-powered analysis. Choose how to provide your transcript:",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "input",
+                          block_id: "transcript_text_block",
+                          optional: true,
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "transcript_text",
+                            multiline: true,
+                            placeholder: {
+                              type: "plain_text",
+                              text: "Paste your transcript here...",
+                            },
+                          },
+                          label: {
+                            type: "plain_text",
+                            text: "📝 Paste Transcript Text",
+                          },
+                        },
+                        {
+                          type: "input",
+                          block_id: "transcript_link_block",
+                          optional: true,
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "transcript_link",
+                            placeholder: {
+                              type: "plain_text",
+                              text: "https://docs.google.com/document/d/...",
+                            },
+                          },
+                          label: {
+                            type: "plain_text",
+                            text: "🔗 Or Paste Link to Transcript",
+                          },
+                        },
+                        {
+                          type: "context",
+                          elements: [
+                            {
+                              type: "mrkdwn",
+                              text: "💡 *Tip:* You can also upload files by attaching them to a DM with the bot.",
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  });
+                  
+                  logger?.info("✅ [App Home] Upload modal opened successfully");
+                  return c.json({ ok: true });
+                  
+                } else if (action.action_id === "switch_to_insights_tab") {
+                  logger?.info("💡 [App Home] Switching to Insights tab", { userId });
+                  
+                  try {
+                    const { buildInsightsTab } = await import("./ui/appHomeViews");
+                    const view = await buildInsightsTab(userId);
+                    
+                    await slack.views.publish({
+                      user_id: userId,
+                      view: view as any,
+                    });
+                    
+                    logger?.info("✅ [App Home] Switched to Insights tab");
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error switching to Insights tab", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    return c.json({ ok: false, error: "Failed to switch tabs" }, 500);
+                  }
+                  
+                } else if (action.action_id === "view_transcript_insights") {
+                  const transcriptId = action.value;
+                  logger?.info("🔍 [App Home] Viewing insights for transcript", { userId, transcriptId });
+                  
+                  try {
+                    // Get insights for this transcript
+                    const insights = await prisma.insight.findMany({
+                      where: { transcript_id: transcriptId },
+                      orderBy: { created_at: "desc" },
+                      include: {
+                        transcript: {
+                          select: {
+                            id: true,
+                            title: true,
+                          },
+                        },
+                      },
+                    });
+                    
+                    const transcript = insights.length > 0 ? insights[0].transcript : null;
+                    
+                    // Build insights view for this transcript
+                    const blocks: any[] = [
+                      {
+                        type: "section",
+                        text: {
+                          type: "mrkdwn",
+                          text: `*Insights for: ${transcript?.title || "Transcript"}* 💡`,
+                        },
+                      },
+                      {
+                        type: "divider",
+                      },
+                    ];
+                    
+                    if (insights.length === 0) {
+                      blocks.push({
+                        type: "section",
+                        text: {
+                          type: "mrkdwn",
+                          text: "No insights found for this transcript.",
+                        },
+                      });
+                    } else {
+                      for (const insight of insights) {
+                        const statusBadge = insight.exported ? "✅ Exported" : "🆕 New";
+                        const typeEmoji: Record<string, string> = {
+                          pain: "😣",
+                          blocker: "🚫",
+                          feature_request: "✨",
+                          idea: "💭",
+                          gain: "📈",
+                          outcome: "🎯",
+                          objection: "⚠️",
+                          buying_signal: "💰",
+                        };
+                        const emoji = typeEmoji[insight.type] || "💡";
+                        
+                        blocks.push({
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: `${emoji} *${insight.title}*\n${insight.description}\n\n_${statusBadge} • Confidence: ${(insight.confidence * 100).toFixed(0)}%_`,
+                          },
+                          accessory: insight.exported ? undefined : {
+                            type: "button",
+                            text: {
+                              type: "plain_text",
+                              text: "Export",
+                            },
+                            action_id: "export_single_insight",
+                            value: insight.id,
+                          },
+                        });
+                        
+                        blocks.push({
+                          type: "divider",
+                        });
+                      }
+                    }
+                    
+                    // Update App Home view
+                    await slack.views.publish({
+                      user_id: userId,
+                      view: {
+                        type: "home",
+                        blocks,
+                      } as any,
+                    });
+                    
+                    logger?.info("✅ [App Home] Insights view published");
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error viewing transcript insights", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    return c.json({ ok: false, error: "Failed to view insights" }, 500);
+                  }
+                  
+                } else if (action.action_id === "export_all_linear") {
+                  logger?.info("📤 [App Home] Exporting all new insights to Linear", { userId });
+                  
+                  try {
+                    // Get all non-exported insights for this user
+                    const insights = await prisma.insight.findMany({
+                      where: {
+                        transcript: {
+                          slack_user_id: userId,
+                        },
+                        exported: false,
+                      },
+                      select: {
+                        id: true,
+                      },
+                    });
+                    
+                    const insightIds = insights.map(i => i.id);
+                    
+                    if (insightIds.length === 0) {
+                      // Send ephemeral message
+                      await slack.chat.postEphemeral({
+                        channel: userId,
+                        user: userId,
+                        text: "No new insights to export. All insights have already been exported.",
+                      });
+                      
+                      logger?.info("ℹ️ [App Home] No new insights to export");
+                      return c.json({ ok: true });
+                    }
+                    
+                    logger?.info("📋 [App Home] Found insights to export", { count: insightIds.length });
+                    
+                    // Get the export tool from mastra
+                    const { exportLinearTool } = await import("./tools/exportLinearTool");
+                    
+                    // Execute the export tool
+                    const result = await exportLinearTool.execute({
+                      context: { insightIds, userId },
+                      mastra,
+                      runtimeContext: {},
+                    });
+                    
+                    // Send result message
+                    await slack.chat.postEphemeral({
+                      channel: userId,
+                      user: userId,
+                      text: result.success 
+                        ? `✅ Successfully exported ${result.exportedCount} insight(s) to Linear!${result.failedCount > 0 ? ` (${result.failedCount} failed)` : ""}`
+                        : `❌ Export failed: ${result.error}`,
+                    });
+                    
+                    logger?.info("✅ [App Home] Linear export completed", {
+                      exported: result.exportedCount,
+                      failed: result.failedCount,
+                    });
+                    
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error exporting to Linear", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    
+                    await slack.chat.postEphemeral({
+                      channel: userId,
+                      user: userId,
+                      text: `❌ Export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    });
+                    
+                    return c.json({ ok: false, error: "Export failed" }, 500);
+                  }
+                  
+                } else if (action.action_id === "export_all_airtable") {
+                  logger?.info("📤 [App Home] Exporting all new insights to Airtable", { userId });
+                  
+                  try {
+                    // Get all non-exported insights for this user
+                    const insights = await prisma.insight.findMany({
+                      where: {
+                        transcript: {
+                          slack_user_id: userId,
+                        },
+                        exported: false,
+                      },
+                      select: {
+                        id: true,
+                      },
+                    });
+                    
+                    const insightIds = insights.map(i => i.id);
+                    
+                    if (insightIds.length === 0) {
+                      // Send ephemeral message
+                      await slack.chat.postEphemeral({
+                        channel: userId,
+                        user: userId,
+                        text: "No new insights to export. All insights have already been exported.",
+                      });
+                      
+                      logger?.info("ℹ️ [App Home] No new insights to export");
+                      return c.json({ ok: true });
+                    }
+                    
+                    logger?.info("📋 [App Home] Found insights to export", { count: insightIds.length });
+                    
+                    // Get the export tool from mastra
+                    const { exportAirtableTool } = await import("./tools/exportAirtableTool");
+                    
+                    // Execute the export tool
+                    const result = await exportAirtableTool.execute({
+                      context: { insightIds, userId },
+                      mastra,
+                      runtimeContext: {},
+                    });
+                    
+                    // Send result message
+                    await slack.chat.postEphemeral({
+                      channel: userId,
+                      user: userId,
+                      text: result.success 
+                        ? `✅ Successfully exported ${result.exportedCount} insight(s) to Airtable!${result.failedCount > 0 ? ` (${result.failedCount} failed)` : ""}`
+                        : `❌ Export failed: ${result.error}`,
+                    });
+                    
+                    logger?.info("✅ [App Home] Airtable export completed", {
+                      exported: result.exportedCount,
+                      failed: result.failedCount,
+                    });
+                    
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error exporting to Airtable", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    
+                    await slack.chat.postEphemeral({
+                      channel: userId,
+                      user: userId,
+                      text: `❌ Export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    });
+                    
+                    return c.json({ ok: false, error: "Export failed" }, 500);
+                  }
+                  
+                } else if (action.action_id === "export_single_insight") {
+                  const insightId = action.value;
+                  logger?.info("📤 [App Home] Exporting single insight", { userId, insightId });
+                  
+                  try {
+                    // Get the insight to determine which export tool to use
+                    const insight = await prisma.insight.findUnique({
+                      where: { id: insightId },
+                      include: {
+                        transcript: true,
+                      },
+                    });
+                    
+                    if (!insight) {
+                      throw new Error("Insight not found");
+                    }
+                    
+                    // Check for user's default export provider
+                    const exportConfig = await prisma.exportConfig.findFirst({
+                      where: {
+                        user_id: userId,
+                        enabled: true,
+                      },
+                      orderBy: {
+                        created_at: "desc",
+                      },
+                    });
+                    
+                    if (!exportConfig) {
+                      await slack.chat.postEphemeral({
+                        channel: userId,
+                        user: userId,
+                        text: "❌ No export destination configured. Please configure an export destination in Settings.",
+                      });
+                      return c.json({ ok: true });
+                    }
+                    
+                    logger?.info("📋 [App Home] Using export provider", { provider: exportConfig.provider });
+                    
+                    // Export based on provider
+                    let result;
+                    if (exportConfig.provider === "linear") {
+                      const { exportLinearTool } = await import("./tools/exportLinearTool");
+                      result = await exportLinearTool.execute({
+                        context: { insightIds: [insightId], userId },
+                        mastra,
+                        runtimeContext: {},
+                      });
+                    } else if (exportConfig.provider === "airtable") {
+                      const { exportAirtableTool } = await import("./tools/exportAirtableTool");
+                      result = await exportAirtableTool.execute({
+                        context: { insightIds: [insightId], userId },
+                        mastra,
+                        runtimeContext: {},
+                      });
+                    } else {
+                      throw new Error(`Unsupported export provider: ${exportConfig.provider}`);
+                    }
+                    
+                    // Send result message
+                    await slack.chat.postEphemeral({
+                      channel: userId,
+                      user: userId,
+                      text: result.success 
+                        ? `✅ Successfully exported insight to ${exportConfig.provider}!`
+                        : `❌ Export failed: ${result.error}`,
+                    });
+                    
+                    logger?.info("✅ [App Home] Single insight export completed", {
+                      provider: exportConfig.provider,
+                      success: result.success,
+                    });
+                    
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error exporting single insight", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    
+                    await slack.chat.postEphemeral({
+                      channel: userId,
+                      user: userId,
+                      text: `❌ Export failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    });
+                    
+                    return c.json({ ok: false, error: "Export failed" }, 500);
+                  }
+                }
+              }
+              
+              // Handle message actions (right-click shortcuts)
+              if (payload.type === "message_action") {
+                const userId = payload.user.id;
+                const { slack } = await (await import("../triggers/slackTriggers")).getClient();
+                const { getPrisma } = await import("./utils/database");
+                const prisma = getPrisma();
+                
+                if (payload.callback_id === "add_to_meetyai") {
+                  logger?.info("📌 [Message Action] User adding message to MeetyAI", {
+                    user: userId,
+                    messageText: payload.message.text?.substring(0, 100),
+                  });
+                  
+                  try {
+                    // Extract message content
+                    const messageText = payload.message.text || "";
+                    const channel = payload.channel.id;
+                    const messageTs = payload.message.ts;
+                    
+                    // Create transcript record
+                    const transcript = await prisma.transcript.create({
+                      data: {
+                        title: `Transcript from Slack message (${new Date().toLocaleDateString()})`,
+                        origin: "paste",
+                        status: "file_uploaded",
+                        slack_user_id: userId,
+                        slack_channel_id: channel,
+                        slack_message_ts: messageTs,
+                        raw_content: messageText,
+                        transcript_text: messageText,
+                        language: "en",
+                      },
+                    });
+                    
+                    logger?.info("✅ [Message Action] Transcript created from message", {
+                      transcriptId: transcript.id,
+                    });
+                    
+                    // Send confirmation to user
+                    await slack.chat.postEphemeral({
+                      channel,
+                      user: userId,
+                      text: `✅ Message added to MeetyAI! Analyzing now...`,
+                    });
+                    
+                    // Start analysis workflow
+                    const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
+                    await run.start({
+                      inputData: {
+                        message: messageText,
+                        threadId: `slack-message-action/${Date.now()}`,
+                        slackUserId: userId,
+                        slackChannel: userId, // DM for results
+                        threadTs: undefined,
+                      },
+                    });
+                    
+                    logger?.info("✅ [Message Action] Analysis workflow started");
+                    return c.json({ ok: true });
+                    
+                  } catch (error) {
+                    logger?.error("❌ [Message Action] Error processing message", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    
+                    await slack.chat.postEphemeral({
+                      channel: payload.channel.id,
+                      user: userId,
+                      text: `❌ Failed to add message to MeetyAI: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    });
+                    
+                    return c.json({ ok: false, error: "Failed to process message" }, 500);
+                  }
                 }
               }
               
@@ -835,6 +1410,43 @@ export const mastra = new Mastra({
                   });
                   
                   logger?.info("✅ [MeetyAI Modal] Analysis started");
+                  return c.json({ response_action: "clear" });
+                  
+                } else if (callbackId === "upload_transcript_modal") {
+                  // Handle upload transcript modal submission (from App Home)
+                  const transcriptText = values.transcript_text_block?.transcript_text?.value;
+                  const transcriptLink = values.transcript_link_block?.transcript_link?.value;
+                  
+                  if (!transcriptText && !transcriptLink) {
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        transcript_text_block: "Please provide either text or a link",
+                      },
+                    });
+                  }
+                  
+                  logger?.info("📤 [App Home Upload] Processing transcript submission", {
+                    hasText: !!transcriptText,
+                    hasLink: !!transcriptLink,
+                  });
+                  
+                  // Start analysis workflow
+                  const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
+                  const threadId = `slack-app-home/${Date.now()}`;
+                  
+                  const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
+                  await run.start({
+                    inputData: {
+                      message,
+                      threadId,
+                      slackUserId: userId,
+                      slackChannel: userId, // DM
+                      threadTs: undefined,
+                    },
+                  });
+                  
+                  logger?.info("✅ [App Home Upload] Analysis workflow started");
                   return c.json({ response_action: "clear" });
                   
                 } else if (callbackId === "meetyai_settings_modal") {
