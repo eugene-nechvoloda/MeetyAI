@@ -781,6 +781,179 @@ export const mastra = new Mastra({
                   
                   return c.json({ ok: true });
                   
+                } else if (action.action_id === "open_insights_export_settings") {
+                  // Get existing export configs (same as open_export_settings but triggered from Insights tab)
+                  const exportConfigs = await prisma.exportConfig.findMany({
+                    where: { user_id: userId },
+                  });
+                  
+                  const linearConfig = exportConfigs.find(e => e.provider === "linear");
+                  
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "export_config_modal",
+                      title: { type: "plain_text", text: "Export Configuration" },
+                      submit: { type: "plain_text", text: "Save" },
+                      close: { type: "plain_text", text: "Cancel" },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Configure Export Destinations*\nSet up where insights should be exported",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_provider",
+                          element: {
+                            type: "static_select",
+                            action_id: "provider",
+                            placeholder: { type: "plain_text", text: "Select destination" },
+                            options: [
+                              { text: { type: "plain_text", text: "Linear" }, value: "linear" },
+                              { text: { type: "plain_text", text: "Airtable" }, value: "airtable" },
+                              { text: { type: "plain_text", text: "Custom Webhook" }, value: "webhook" },
+                            ],
+                            initial_option: { text: { type: "plain_text", text: "Linear" }, value: "linear" },
+                          },
+                          label: { type: "plain_text", text: "Export Destination" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_enabled",
+                          element: {
+                            type: "radio_buttons",
+                            action_id: "enabled",
+                            options: [
+                              { text: { type: "plain_text", text: "Enabled" }, value: "true" },
+                              { text: { type: "plain_text", text: "Disabled" }, value: "false" },
+                            ],
+                            initial_option: linearConfig?.enabled !== false
+                              ? { text: { type: "plain_text", text: "Enabled" }, value: "true" }
+                              : { text: { type: "plain_text", text: "Disabled" }, value: "false" },
+                          },
+                          label: { type: "plain_text", text: "Status" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_api_key",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "api_key",
+                            placeholder: { type: "plain_text", text: "Enter API key or access token" },
+                          },
+                          label: { type: "plain_text", text: "API Key / Access Token" },
+                          optional: true,
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_team_id",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "team_id",
+                            placeholder: { type: "plain_text", text: "e.g., team-abc123 (for Linear)" },
+                            initial_value: linearConfig?.team_id || "",
+                          },
+                          label: { type: "plain_text", text: "Team/Workspace ID" },
+                          optional: true,
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Field Mapping*\nMap MeetyAI fields to destination fields:",
+                          },
+                        },
+                        {
+                          type: "input",
+                          block_id: "field_mapping_title",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "title",
+                            placeholder: { type: "plain_text", text: "e.g., title, name" },
+                            initial_value: "title",
+                          },
+                          label: { type: "plain_text", text: "Insight Title → " },
+                          optional: true,
+                        },
+                        {
+                          type: "input",
+                          block_id: "field_mapping_description",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "description",
+                            placeholder: { type: "plain_text", text: "e.g., description, notes" },
+                            initial_value: "description",
+                          },
+                          label: { type: "plain_text", text: "Insight Description → " },
+                          optional: true,
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*Data Filtering*",
+                          },
+                        },
+                        {
+                          type: "input",
+                          block_id: "min_confidence",
+                          element: {
+                            type: "static_select",
+                            action_id: "confidence",
+                            placeholder: { type: "plain_text", text: "Minimum confidence" },
+                            options: [
+                              { text: { type: "plain_text", text: "Any (0.0+)" }, value: "0.0" },
+                              { text: { type: "plain_text", text: "Low (0.3+)" }, value: "0.3" },
+                              { text: { type: "plain_text", text: "Medium (0.5+)" }, value: "0.5" },
+                              { text: { type: "plain_text", text: "High (0.7+)" }, value: "0.7" },
+                              { text: { type: "plain_text", text: "Very High (0.9+)" }, value: "0.9" },
+                            ],
+                            initial_option: { text: { type: "plain_text", text: `High (${linearConfig?.min_confidence || 0.7}+)` }, value: String(linearConfig?.min_confidence || 0.7) },
+                          },
+                          label: { type: "plain_text", text: "Minimum Confidence Threshold" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "types_filter",
+                          element: {
+                            type: "checkboxes",
+                            action_id: "types",
+                            options: [
+                              { text: { type: "plain_text", text: "Pains" }, value: "pain" },
+                              { text: { type: "plain_text", text: "Feature Requests" }, value: "feature_request" },
+                              { text: { type: "plain_text", text: "Gains" }, value: "gain" },
+                              { text: { type: "plain_text", text: "Objections" }, value: "objection" },
+                            ],
+                            initial_options: [
+                              { text: { type: "plain_text", text: "Pains" }, value: "pain" },
+                              { text: { type: "plain_text", text: "Feature Requests" }, value: "feature_request" },
+                              { text: { type: "plain_text", text: "Gains" }, value: "gain" },
+                              { text: { type: "plain_text", text: "Objections" }, value: "objection" },
+                            ],
+                          },
+                          label: { type: "plain_text", text: "Export These Insight Types" },
+                          optional: true,
+                        },
+                        {
+                          type: "context",
+                          elements: [
+                            { type: "mrkdwn", text: "💡 Only insights matching filters will be exported" },
+                          ],
+                        },
+                      ],
+                    },
+                  });
+                  
+                  logger?.info("✅ [App Home] Export settings modal opened from Insights tab");
+                  return c.json({ ok: true });
+                  
                 } else if (action.action_id === "open_general_settings") {
                   // Get existing user settings
                   const userSettings = await prisma.userSetting.findUnique({
