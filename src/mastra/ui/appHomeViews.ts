@@ -232,6 +232,14 @@ export async function buildInsightsTab(userId: string) {
           },
           action_id: "export_all_airtable",
         },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "⚙️ Export Settings",
+          },
+          action_id: "open_insights_export_settings",
+        },
       ],
     },
     {
