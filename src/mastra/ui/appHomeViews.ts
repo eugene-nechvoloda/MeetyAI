@@ -267,8 +267,13 @@ export async function buildInsightsTab(userId: string) {
         outcome: "🎯",
         objection: "⚠️",
         buying_signal: "💰",
+        question: "❓",
+        feedback: "💬",
+        confusion: "😵",
+        opportunity: "🚀",
+        insight: "💡",
       };
-      const emoji = typeEmoji[insight.type] || "💡";
+      const emoji = typeEmoji[insight.type] || "📝";
       
       blocks.push({
         type: "section",
