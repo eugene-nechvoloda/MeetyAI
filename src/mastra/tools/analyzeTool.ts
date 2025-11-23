@@ -28,7 +28,7 @@ const evidenceQuoteSchema = z.object({
 const insightSchema = z.object({
   title: z.string().min(10).max(70),
   description: z.string().max(200),
-  type: z.enum(["pain", "blocker", "feature_request", "idea", "gain", "outcome", "objection", "buying_signal", "question", "feedback", "other"]),
+  type: z.enum(["pain", "blocker", "feature_request", "idea", "gain", "outcome", "objection", "buying_signal", "question", "feedback", "confusion", "opportunity", "insight", "other"]),
   evidence: z.array(evidenceQuoteSchema).min(1),
   confidence: z.number().min(0).max(1),
   timestamp_start: z.string().optional(),
@@ -86,10 +86,10 @@ export const analyzeTool = createTool({
       
       // Define the 4 passes
       const passes = [
-        { number: 1, types: ["pain", "blocker"], focus: "Problems, frustrations, challenges, and blockers" },
+        { number: 1, types: ["pain", "blocker", "confusion", "question"], focus: "Problems, frustrations, challenges, blockers, confusion, unclear requirements, and questions" },
         { number: 2, types: ["feature_request", "idea"], focus: "Feature requests, ideas, and suggestions" },
-        { number: 3, types: ["gain", "outcome"], focus: "Wins, positive outcomes, and benefits achieved" },
-        { number: 4, types: ["objection", "buying_signal"], focus: "Objections, concerns, and buying signals" },
+        { number: 3, types: ["gain", "outcome", "opportunity"], focus: "Wins, positive outcomes, benefits achieved, and potential opportunities" },
+        { number: 4, types: ["objection", "buying_signal", "insight", "feedback"], focus: "Objections, concerns, buying signals, general insights, and feedback" },
       ];
       
       // Anti-hallucination protocol system prompt
@@ -124,12 +124,27 @@ For each insight:
 
 Extract at least 10 insights if the transcript supports it. Quality over quantity.
 
+TYPE DEFINITIONS:
+- pain: Customer frustration or dissatisfaction
+- blocker: Technical or process obstacle preventing progress
+- confusion: Unclear requirements, misunderstanding, or lack of clarity
+- question: Direct questions or uncertainties expressed
+- feature_request: Explicit request for new functionality
+- idea: Suggestion or proposal for improvement
+- gain: Positive outcome or benefit achieved
+- outcome: Result or achievement from using product/service
+- opportunity: Potential business or product opportunity identified
+- objection: Concern or hesitation about product/solution
+- buying_signal: Indication of purchase intent or readiness
+- insight: General observation or realization
+- feedback: General commentary or evaluation
+
 Respond with a JSON array of insights in this exact format:
 [
   {
     "title": "Clear insight title 50-70 chars",
     "description": "Brief description under 200 chars",
-    "type": "pain|blocker|feature_request|idea|gain|outcome|objection|buying_signal",
+    "type": "pain|blocker|confusion|question|feature_request|idea|gain|outcome|opportunity|objection|buying_signal|insight|feedback",
     "evidence": [
       {
         "quote": "Exact verbatim quote from transcript",
