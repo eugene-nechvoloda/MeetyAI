@@ -180,6 +180,9 @@ function mapInsightType(type: string): InsightType {
     "buying_signal": InsightType.buying_signal,
     "question": InsightType.question,
     "feedback": InsightType.feedback,
+    "confusion": InsightType.confusion,
+    "opportunity": InsightType.opportunity,
+    "insight": InsightType.insight,
   };
   
   return typeMap[type.toLowerCase()] || InsightType.other;
