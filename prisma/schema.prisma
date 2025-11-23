@@ -131,6 +131,9 @@ enum InsightType {
   buying_signal
   question
   feedback
+  confusion
+  opportunity
+  insight
   other
 }
 
