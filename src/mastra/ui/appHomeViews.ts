@@ -57,29 +57,43 @@ function buildTabNavigation(activeTab: TabType): any[] {
 }
 
 export async function buildHomeTab(userId: string) {
-  const prisma = getPrisma();
+  let transcriptCount = 0;
+  let insightCount = 0;
+  let newInsightCount = 0;
+  let statsAvailable = true;
   
-  // Get quick stats
-  const transcriptCount = await prisma.transcript.count({
-    where: { slack_user_id: userId },
-  });
-  
-  const insightCount = await prisma.insight.count({
-    where: { 
-      transcript: {
-        slack_user_id: userId,
+  try {
+    const prisma = getPrisma();
+    
+    // Get quick stats
+    transcriptCount = await prisma.transcript.count({
+      where: { slack_user_id: userId },
+    });
+    
+    insightCount = await prisma.insight.count({
+      where: { 
+        transcript: {
+          slack_user_id: userId,
+        },
       },
-    },
-  });
-  
-  const newInsightCount = await prisma.insight.count({
-    where: { 
-      transcript: {
-        slack_user_id: userId,
+    });
+    
+    newInsightCount = await prisma.insight.count({
+      where: { 
+        transcript: {
+          slack_user_id: userId,
+        },
+        exported: false,
       },
-      exported: false,
-    },
-  });
+    });
+  } catch (error) {
+    console.error("Database error in buildHomeTab:", error);
+    statsAvailable = false;
+  }
+  
+  const statsText = statsAvailable
+    ? `📊 *Your Stats*\n• ${transcriptCount} transcripts analyzed\n• ${insightCount} insights extracted\n• ${newInsightCount} insights ready to export`
+    : "📊 *Your Stats*\n_Loading..._";
   
   return {
     type: "home",
@@ -100,7 +114,7 @@ export async function buildHomeTab(userId: string) {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `📊 *Your Stats*\n• ${transcriptCount} transcripts analyzed\n• ${insightCount} insights extracted\n• ${newInsightCount} insights ready to export`,
+          text: statsText,
         },
       },
       {
@@ -149,15 +163,6 @@ export async function buildHomeTab(userId: string) {
 }
 
 export async function buildTranscriptsTab(userId: string) {
-  const prisma = getPrisma();
-  
-  // Get transcripts for this user
-  const transcripts = await prisma.transcript.findMany({
-    where: { slack_user_id: userId },
-    orderBy: { created_at: "desc" },
-    take: 10, // Show last 10
-  });
-  
   const blocks: any[] = [
     // Tab navigation at the top
     ...buildTabNavigation("transcripts"),
@@ -187,44 +192,69 @@ export async function buildTranscriptsTab(userId: string) {
     },
   ];
   
-  if (transcripts.length === 0) {
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "No transcripts yet. Click *Upload New Transcript* to get started!",
-      },
+  try {
+    const prisma = getPrisma();
+    
+    // Get transcripts for this user
+    const transcripts = await prisma.transcript.findMany({
+      where: { slack_user_id: userId },
+      orderBy: { created_at: "desc" },
+      take: 10, // Show last 10
     });
-  } else {
-    for (const transcript of transcripts) {
-      const date = new Date(transcript.created_at).toLocaleDateString();
-      
-      // Count insights for this transcript
-      const insightCount = await prisma.insight.count({
-        where: { transcript_id: transcript.id },
-      });
-      
+    
+    if (transcripts.length === 0) {
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${transcript.title}*\n📅 ${date} • 💡 ${insightCount} insights`,
+          text: "No transcripts yet. Click *Upload New Transcript* to get started!",
         },
-        accessory: {
-          type: "button",
+      });
+    } else {
+      for (const transcript of transcripts) {
+        const date = new Date(transcript.created_at).toLocaleDateString();
+        
+        // Count insights for this transcript
+        let insightCount = 0;
+        try {
+          insightCount = await prisma.insight.count({
+            where: { transcript_id: transcript.id },
+          });
+        } catch (e) {
+          // Ignore count error
+        }
+        
+        blocks.push({
+          type: "section",
           text: {
-            type: "plain_text",
-            text: "View Insights",
+            type: "mrkdwn",
+            text: `*${transcript.title}*\n📅 ${date} • 💡 ${insightCount} insights`,
           },
-          action_id: "view_transcript_insights",
-          value: transcript.id,
-        },
-      });
-      
-      blocks.push({
-        type: "divider",
-      });
+          accessory: {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "View Insights",
+            },
+            action_id: "view_transcript_insights",
+            value: transcript.id,
+          },
+        });
+        
+        blocks.push({
+          type: "divider",
+        });
+      }
     }
+  } catch (error) {
+    console.error("Database error in buildTranscriptsTab:", error);
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "_Loading transcripts..._",
+      },
+    });
   }
   
   return {
@@ -234,27 +264,6 @@ export async function buildTranscriptsTab(userId: string) {
 }
 
 export async function buildInsightsTab(userId: string) {
-  const prisma = getPrisma();
-  
-  // Get insights for this user
-  const insights = await prisma.insight.findMany({
-    where: { 
-      transcript: {
-        slack_user_id: userId,
-      },
-    },
-    orderBy: { created_at: "desc" },
-    take: 20, // Show last 20
-    include: {
-      transcript: {
-        select: {
-          id: true,
-          title: true,
-        },
-      },
-    },
-  });
-  
   const blocks: any[] = [
     // Tab navigation at the top
     ...buildTabNavigation("insights"),
@@ -300,55 +309,87 @@ export async function buildInsightsTab(userId: string) {
     },
   ];
   
-  if (insights.length === 0) {
-    blocks.push({
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: "No insights yet. Upload a transcript to extract insights!",
+  try {
+    const prisma = getPrisma();
+    
+    // Get insights for this user
+    const insights = await prisma.insight.findMany({
+      where: { 
+        transcript: {
+          slack_user_id: userId,
+        },
+      },
+      orderBy: { created_at: "desc" },
+      take: 20, // Show last 20
+      include: {
+        transcript: {
+          select: {
+            id: true,
+            title: true,
+          },
+        },
       },
     });
-  } else {
-    for (const insight of insights) {
-      const statusBadge = insight.exported ? "✅ Exported" : "🆕 New";
-      const typeEmoji: Record<string, string> = {
-        pain: "😣",
-        blocker: "🚫",
-        feature_request: "✨",
-        idea: "💭",
-        gain: "📈",
-        outcome: "🎯",
-        objection: "⚠️",
-        buying_signal: "💰",
-        question: "❓",
-        feedback: "💬",
-        confusion: "😵",
-        opportunity: "🚀",
-        insight: "💡",
-      };
-      const emoji = typeEmoji[insight.type] || "📝";
-      
+    
+    if (insights.length === 0) {
       blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `${emoji} *${insight.title}*\n${insight.description}\n\n_${statusBadge} • Confidence: ${(insight.confidence * 100).toFixed(0)}% • Source: ${insight.transcript.title}_`,
+          text: "No insights yet. Upload a transcript to extract insights!",
         },
-        accessory: insight.exported ? undefined : {
-          type: "button",
+      });
+    } else {
+      for (const insight of insights) {
+        const statusBadge = insight.exported ? "✅ Exported" : "🆕 New";
+        const typeEmoji: Record<string, string> = {
+          pain: "😣",
+          blocker: "🚫",
+          feature_request: "✨",
+          idea: "💭",
+          gain: "📈",
+          outcome: "🎯",
+          objection: "⚠️",
+          buying_signal: "💰",
+          question: "❓",
+          feedback: "💬",
+          confusion: "😵",
+          opportunity: "🚀",
+          insight: "💡",
+        };
+        const emoji = typeEmoji[insight.type] || "📝";
+        
+        blocks.push({
+          type: "section",
           text: {
-            type: "plain_text",
-            text: "Export",
+            type: "mrkdwn",
+            text: `${emoji} *${insight.title}*\n${insight.description}\n\n_${statusBadge} • Confidence: ${(insight.confidence * 100).toFixed(0)}% • Source: ${insight.transcript.title}_`,
           },
-          action_id: "export_single_insight",
-          value: insight.id,
-        },
-      });
-      
-      blocks.push({
-        type: "divider",
-      });
+          accessory: insight.exported ? undefined : {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "Export",
+            },
+            action_id: "export_single_insight",
+            value: insight.id,
+          },
+        });
+        
+        blocks.push({
+          type: "divider",
+        });
+      }
     }
+  } catch (error) {
+    console.error("Database error in buildInsightsTab:", error);
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "_Loading insights..._",
+      },
+    });
   }
   
   return {
