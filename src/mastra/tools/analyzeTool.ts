@@ -87,70 +87,93 @@ export const analyzeTool = createTool({
       // Step 0: Context Classification using GPT-5
       logger.progress("🎯 Classifying conversation context...");
       
-      const openai = createOpenAI({
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-      });
+      let contextTheme = "general_interview";
+      let contextConfidence = 0.5;
       
-      const classificationPrompt = `Analyze this transcript and classify the conversation context/atmosphere.
+      // Check if Replit AI Integrations are available
+      if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || !process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+        logger.warn("⚠️ Replit AI Integrations (OpenAI) not configured. Using default context classification. Enable AI Integrations for intelligent context detection.");
+      } else {
+        try {
+          const openai = createOpenAI({
+            baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+            apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+          });
+          
+          // Use more of the transcript for classification (up to 8000 chars to include full context)
+          const classificationText = transcriptText.slice(0, 8000);
+          
+          const classificationPrompt = `Analyze this transcript and classify the conversation context/atmosphere.
 
-CONTEXT TYPES:
+COMMON CONTEXT TYPES (you can suggest variations or combinations):
 - research_call: Discovery interview, user research, exploratory conversation to understand needs
 - feedback_session: Gathering feedback on specific feature/product, user reactions to existing functionality
 - usability_testing: Testing specific workflows, observing user interactions, task completion
 - sales_demo: Product demonstration, sales pitch, qualifying lead
 - support_call: Customer support, troubleshooting, issue resolution
 - onboarding: New user onboarding, training, getting started
+- brainstorm: Ideation session, creative discussion, exploring possibilities
+- retrospective: Reviewing past work, lessons learned
 - general_interview: General discussion, mixed topics, informal conversation
+
+Based on the conversation content, identify the most appropriate context type. You can use one of the above or propose a more specific variation.
 
 Respond with a JSON object in this exact format:
 {
   "theme": "context_type",
   "confidence": 0.85,
   "reasoning": "Brief explanation of classification",
-  "key_indicators": ["indicator 1", "indicator 2"]
+  "key_indicators": ["indicator 1", "indicator 2"],
+  "priority_insights": ["insight_type_1", "insight_type_2"]
 }
 
-TRANSCRIPT:
-${transcriptText.slice(0, 4000)}`;
+The priority_insights should list 3-5 insight types that are most valuable for this conversation context.
+Available insight types: pain, blocker, confusion, question, feature_request, idea, gain, outcome, opportunity, objection, buying_signal, insight, feedback
 
-      let contextTheme = "general_interview";
-      let contextConfidence = 0.5;
-      
-      try {
-        const { text: classificationText } = await generateText({
-          model: openai.responses("gpt-5"),
-          prompt: classificationPrompt,
-          temperature: 0.3,
-        });
-        
-        const jsonMatch = classificationText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const classification = JSON.parse(jsonMatch[0]);
-          contextTheme = classification.theme || "general_interview";
-          contextConfidence = classification.confidence || 0.5;
-          
-          logger.progress(`📊 Context classified: ${contextTheme} (${(contextConfidence * 100).toFixed(0)}% confidence)`, {
-            reasoning: classification.reasoning,
-            indicators: classification.key_indicators,
+TRANSCRIPT:
+${classificationText}`;
+
+          const { text: responseText } = await generateText({
+            model: openai.responses("gpt-5"),
+            prompt: classificationPrompt,
+            temperature: 0.3,
           });
           
-          // Store context in database
-          await prisma.transcript.update({
-            where: { id: transcriptId },
-            data: {
-              context_theme: contextTheme,
-              context_confidence: contextConfidence,
-            },
-          });
+          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const classification = JSON.parse(jsonMatch[0]);
+            
+            // Normalize theme: lowercase, replace spaces/hyphens with underscores, trim
+            const rawTheme = classification.theme || "general_interview";
+            contextTheme = rawTheme.toLowerCase().trim().replace(/[\s-]+/g, '_');
+            contextConfidence = classification.confidence || 0.5;
+            
+            logger.progress(`📊 Context classified: ${contextTheme} (${(contextConfidence * 100).toFixed(0)}% confidence)`, {
+              reasoning: classification.reasoning,
+              indicators: classification.key_indicators,
+              priorityInsights: classification.priority_insights,
+            });
+            
+            // Store context and GPT-5's priority insights for later use
+            await prisma.transcript.update({
+              where: { id: transcriptId },
+              data: {
+                context_theme: contextTheme,
+                context_confidence: contextConfidence,
+              },
+            });
+            
+            // Store GPT-5's priority insights for dynamic mapping
+            (context as any).gptPriorityInsights = classification.priority_insights || [];
+          }
+        } catch (error) {
+          logger.warn("⚠️ Context classification failed, proceeding with default context", { error: String(error) });
         }
-      } catch (error) {
-        logger.warn("Context classification failed, using default", { error });
       }
       
       const allInsights: any[] = [];
       
-      // Define context-aware focus for each pass
+      // Define context-aware focus for each pass (with fallbacks for known contexts)
       const contextFocusMap: Record<string, { priority: string[], secondary: string[] }> = {
         research_call: {
           priority: ["opportunity", "insight", "confusion", "question"],
@@ -176,13 +199,60 @@ ${transcriptText.slice(0, 4000)}`;
           priority: ["confusion", "question", "blocker"],
           secondary: ["feedback", "gain"],
         },
+        brainstorm: {
+          priority: ["idea", "opportunity", "feature_request"],
+          secondary: ["insight", "question"],
+        },
+        retrospective: {
+          priority: ["insight", "feedback", "gain", "pain"],
+          secondary: ["opportunity", "idea"],
+        },
         general_interview: {
           priority: ["pain", "feature_request", "gain", "objection"],
           secondary: [],
         },
       };
       
-      const contextFocus = contextFocusMap[contextTheme] || contextFocusMap.general_interview;
+      // Try to match context theme (handle variations like "research_call_technical" → "research_call")
+      let contextFocus = contextFocusMap[contextTheme];
+      
+      // If exact match not found, try to find a partial match using substring similarity
+      if (!contextFocus) {
+        // First try: find key that is contained in theme or vice versa
+        const baseTheme = Object.keys(contextFocusMap).find(key => 
+          contextTheme.includes(key) || key.includes(contextTheme)
+        );
+        
+        if (baseTheme) {
+          contextFocus = contextFocusMap[baseTheme];
+          logger.info(`📋 Using base context mapping: ${baseTheme} for theme: ${contextTheme}`);
+        } else {
+          // Second try: check if any word in the theme matches a key
+          const themeWords = contextTheme.split('_');
+          const partialMatch = Object.keys(contextFocusMap).find(key => 
+            themeWords.some(word => key.includes(word) || word.includes(key.split('_')[0]))
+          );
+          
+          if (partialMatch) {
+            contextFocus = contextFocusMap[partialMatch];
+            logger.info(`📋 Using partial context mapping: ${partialMatch} for theme: ${contextTheme}`);
+          } else {
+            // If GPT-5 provided priority insights, use them to build dynamic context focus
+            const gptPriorities = (context as any).gptPriorityInsights || [];
+            if (gptPriorities.length > 0) {
+              contextFocus = {
+                priority: gptPriorities,
+                secondary: [],
+              };
+              logger.info(`🤖 Using GPT-5 dynamic priorities for theme "${contextTheme}":`, gptPriorities);
+            } else {
+              // Final fallback: use general_interview
+              contextFocus = contextFocusMap.general_interview;
+              logger.info(`📋 No matching context mapping for "${contextTheme}", using general_interview defaults`);
+            }
+          }
+        }
+      }
       
       // Define the 4 passes with context-aware instructions
       const passes = [
