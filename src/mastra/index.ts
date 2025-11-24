@@ -1152,6 +1152,48 @@ export const mastra = new Mastra({
                   logger?.info("✅ [App Home] Upload modal opened successfully");
                   return c.json({ ok: true });
                   
+                } else if (action.action_id === "switch_to_home_tab") {
+                  logger?.info("🏠 [App Home] Switching to Home tab", { userId });
+                  
+                  try {
+                    const { buildHomeTab } = await import("./ui/appHomeViews");
+                    const view = await buildHomeTab(userId);
+                    
+                    await slack.views.publish({
+                      user_id: userId,
+                      view: view as any,
+                    });
+                    
+                    logger?.info("✅ [App Home] Switched to Home tab");
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error switching to Home tab", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    return c.json({ ok: false, error: "Failed to switch tabs" }, 500);
+                  }
+                  
+                } else if (action.action_id === "switch_to_transcripts_tab") {
+                  logger?.info("📝 [App Home] Switching to Transcripts tab", { userId });
+                  
+                  try {
+                    const { buildTranscriptsTab } = await import("./ui/appHomeViews");
+                    const view = await buildTranscriptsTab(userId);
+                    
+                    await slack.views.publish({
+                      user_id: userId,
+                      view: view as any,
+                    });
+                    
+                    logger?.info("✅ [App Home] Switched to Transcripts tab");
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error switching to Transcripts tab", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                    });
+                    return c.json({ ok: false, error: "Failed to switch tabs" }, 500);
+                  }
+                  
                 } else if (action.action_id === "switch_to_insights_tab") {
                   logger?.info("💡 [App Home] Switching to Insights tab", { userId });
                   

@@ -9,6 +9,53 @@
 
 import { getPrisma } from "../utils/database";
 
+// Tab types for navigation
+type TabType = "home" | "transcripts" | "insights";
+
+/**
+ * Build the tab navigation bar that appears at the top of every view
+ */
+function buildTabNavigation(activeTab: TabType): any[] {
+  return [
+    {
+      type: "actions",
+      block_id: "tab_navigation",
+      elements: [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: activeTab === "home" ? "🏠 Home ●" : "🏠 Home",
+          },
+          action_id: "switch_to_home_tab",
+          style: activeTab === "home" ? "primary" : undefined,
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: activeTab === "transcripts" ? "📝 Transcripts ●" : "📝 Transcripts",
+          },
+          action_id: "switch_to_transcripts_tab",
+          style: activeTab === "transcripts" ? "primary" : undefined,
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: activeTab === "insights" ? "💡 Insights ●" : "💡 Insights",
+          },
+          action_id: "switch_to_insights_tab",
+          style: activeTab === "insights" ? "primary" : undefined,
+        },
+      ],
+    },
+    {
+      type: "divider",
+    },
+  ];
+}
+
 export async function buildHomeTab(userId: string) {
   const prisma = getPrisma();
   
@@ -37,6 +84,8 @@ export async function buildHomeTab(userId: string) {
   return {
     type: "home",
     blocks: [
+      // Tab navigation at the top
+      ...buildTabNavigation("home"),
       {
         type: "section",
         text: {
@@ -80,9 +129,9 @@ export async function buildHomeTab(userId: string) {
             type: "button",
             text: {
               type: "plain_text",
-              text: "💡 View Insights",
+              text: "⚙️ Settings",
             },
-            action_id: "switch_to_insights_tab",
+            action_id: "open_export_settings",
           },
         ],
       },
@@ -91,7 +140,7 @@ export async function buildHomeTab(userId: string) {
         elements: [
           {
             type: "mrkdwn",
-            text: "💡 *Tip:* Use the tabs above to navigate between Transcripts and Insights",
+            text: "💡 *Tip:* Use the tabs above to navigate between Home, Transcripts, and Insights",
           },
         ],
       },
@@ -110,6 +159,8 @@ export async function buildTranscriptsTab(userId: string) {
   });
   
   const blocks: any[] = [
+    // Tab navigation at the top
+    ...buildTabNavigation("transcripts"),
     {
       type: "section",
       text: {
@@ -205,6 +256,8 @@ export async function buildInsightsTab(userId: string) {
   });
   
   const blocks: any[] = [
+    // Tab navigation at the top
+    ...buildTabNavigation("insights"),
     {
       type: "section",
       text: {
