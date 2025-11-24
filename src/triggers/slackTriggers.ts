@@ -252,6 +252,43 @@ export function registerSlackTrigger<
 
           logger?.info("📝 [Slack] payload", { payload });
 
+          // Handle app_home_opened event - show App Home with tabs
+          if (payload.event?.type === "app_home_opened") {
+            logger?.info("🏠 [Slack App Home] User opened App Home", {
+              user: payload.event.user,
+              tab: payload.event.tab,
+            });
+            
+            try {
+              const userId = payload.event.user;
+              const tab = payload.event.tab || "home";
+              
+              // Skip messages tab - not our view
+              if (tab === "messages") {
+                return c.text("OK", 200);
+              }
+              
+              // Import App Home view builders
+              const { buildHomeTab } = await import("../mastra/ui/appHomeViews");
+              
+              // Build and publish the Home view with tabs
+              const view = await buildHomeTab(userId);
+              
+              await slack.views.publish({
+                user_id: userId,
+                view: view as any,
+              });
+              
+              logger?.info("✅ [Slack App Home] View published successfully");
+              return c.text("OK", 200);
+            } catch (error) {
+              logger?.error("❌ [Slack App Home] Error publishing view", {
+                error: format(error),
+              });
+              return c.text("OK", 200); // Still return OK to acknowledge the event
+            }
+          }
+
           // Augment event with channel info
           if (payload && payload.event && payload.event.channel) {
             try {
