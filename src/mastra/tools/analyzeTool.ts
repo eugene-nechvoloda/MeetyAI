@@ -16,6 +16,8 @@ import { Anthropic } from "@anthropic-ai/sdk";
 import { createLogger } from "../utils/logger";
 import { getPrisma } from "../utils/database";
 import cosineSimilarity from "cosine-similarity";
+import { createOpenAI } from "@ai-sdk/openai";
+import { generateText } from "ai";
 
 // Evidence quote structure
 const evidenceQuoteSchema = z.object({
@@ -82,14 +84,140 @@ export const analyzeTool = createTool({
       const apiKey = decrypt(claudeConfig.api_key_encrypted);
       const anthropic = new Anthropic({ apiKey });
       
+      // Step 0: Context Classification using GPT-5
+      logger.progress("🎯 Classifying conversation context...");
+      
+      const openai = createOpenAI({
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      });
+      
+      const classificationPrompt = `Analyze this transcript and classify the conversation context/atmosphere.
+
+CONTEXT TYPES:
+- research_call: Discovery interview, user research, exploratory conversation to understand needs
+- feedback_session: Gathering feedback on specific feature/product, user reactions to existing functionality
+- usability_testing: Testing specific workflows, observing user interactions, task completion
+- sales_demo: Product demonstration, sales pitch, qualifying lead
+- support_call: Customer support, troubleshooting, issue resolution
+- onboarding: New user onboarding, training, getting started
+- general_interview: General discussion, mixed topics, informal conversation
+
+Respond with a JSON object in this exact format:
+{
+  "theme": "context_type",
+  "confidence": 0.85,
+  "reasoning": "Brief explanation of classification",
+  "key_indicators": ["indicator 1", "indicator 2"]
+}
+
+TRANSCRIPT:
+${transcriptText.slice(0, 4000)}`;
+
+      let contextTheme = "general_interview";
+      let contextConfidence = 0.5;
+      
+      try {
+        const { text: classificationText } = await generateText({
+          model: openai.responses("gpt-5"),
+          prompt: classificationPrompt,
+          temperature: 0.3,
+        });
+        
+        const jsonMatch = classificationText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const classification = JSON.parse(jsonMatch[0]);
+          contextTheme = classification.theme || "general_interview";
+          contextConfidence = classification.confidence || 0.5;
+          
+          logger.progress(`📊 Context classified: ${contextTheme} (${(contextConfidence * 100).toFixed(0)}% confidence)`, {
+            reasoning: classification.reasoning,
+            indicators: classification.key_indicators,
+          });
+          
+          // Store context in database
+          await prisma.transcript.update({
+            where: { id: transcriptId },
+            data: {
+              context_theme: contextTheme,
+              context_confidence: contextConfidence,
+            },
+          });
+        }
+      } catch (error) {
+        logger.warn("Context classification failed, using default", { error });
+      }
+      
       const allInsights: any[] = [];
       
-      // Define the 4 passes
+      // Define context-aware focus for each pass
+      const contextFocusMap: Record<string, { priority: string[], secondary: string[] }> = {
+        research_call: {
+          priority: ["opportunity", "insight", "confusion", "question"],
+          secondary: ["pain", "blocker", "gain"],
+        },
+        feedback_session: {
+          priority: ["pain", "gain", "feedback", "feature_request"],
+          secondary: ["confusion", "idea", "objection"],
+        },
+        usability_testing: {
+          priority: ["confusion", "blocker", "pain", "question"],
+          secondary: ["feature_request", "idea"],
+        },
+        sales_demo: {
+          priority: ["buying_signal", "objection", "question"],
+          secondary: ["gain", "outcome", "feature_request"],
+        },
+        support_call: {
+          priority: ["blocker", "pain", "confusion"],
+          secondary: ["feedback", "feature_request"],
+        },
+        onboarding: {
+          priority: ["confusion", "question", "blocker"],
+          secondary: ["feedback", "gain"],
+        },
+        general_interview: {
+          priority: ["pain", "feature_request", "gain", "objection"],
+          secondary: [],
+        },
+      };
+      
+      const contextFocus = contextFocusMap[contextTheme] || contextFocusMap.general_interview;
+      
+      // Define the 4 passes with context-aware instructions
       const passes = [
-        { number: 1, types: ["pain", "blocker", "confusion", "question"], focus: "Problems, frustrations, challenges, blockers, confusion, unclear requirements, and questions" },
-        { number: 2, types: ["feature_request", "idea"], focus: "Feature requests, ideas, and suggestions" },
-        { number: 3, types: ["gain", "outcome", "opportunity"], focus: "Wins, positive outcomes, benefits achieved, and potential opportunities" },
-        { number: 4, types: ["objection", "buying_signal", "insight", "feedback"], focus: "Objections, concerns, buying signals, general insights, and feedback" },
+        { 
+          number: 1, 
+          types: ["pain", "blocker", "confusion", "question"], 
+          focus: "Problems, frustrations, challenges, blockers, confusion, unclear requirements, and questions",
+          contextNote: contextFocus.priority.some(t => ["pain", "blocker", "confusion", "question"].includes(t)) 
+            ? `⚡ HIGH PRIORITY for ${contextTheme}: Pay extra attention to these insight types as they are critical for this context.`
+            : "",
+        },
+        { 
+          number: 2, 
+          types: ["feature_request", "idea"], 
+          focus: "Feature requests, ideas, and suggestions",
+          contextNote: contextFocus.priority.some(t => ["feature_request", "idea"].includes(t)) 
+            ? `⚡ HIGH PRIORITY for ${contextTheme}: These insights are especially valuable in this context.`
+            : "",
+        },
+        { 
+          number: 3, 
+          types: ["gain", "outcome", "opportunity"], 
+          focus: "Wins, positive outcomes, benefits achieved, and potential opportunities",
+          contextNote: contextFocus.priority.some(t => ["gain", "outcome", "opportunity"].includes(t)) 
+            ? `⚡ HIGH PRIORITY for ${contextTheme}: Focus on extracting these as they align with the conversation's purpose.`
+            : "",
+        },
+        { 
+          number: 4, 
+          types: ["objection", "buying_signal", "insight", "feedback"], 
+          focus: "Objections, concerns, buying signals, general insights, and feedback",
+          contextNote: contextFocus.priority.some(t => ["objection", "buying_signal", "insight", "feedback"].includes(t)) 
+            ? `⚡ HIGH PRIORITY for ${contextTheme}: These are key indicators for this type of conversation.`
+            : "",
+        },
       ];
       
       // Anti-hallucination protocol system prompt
@@ -112,6 +240,9 @@ You will analyze transcripts and extract insights with evidence.`;
         const passPrompt = `${antiHallucinationPrompt}
 
 PASS ${pass.number}/4: ${pass.focus}
+
+CONVERSATION CONTEXT: This transcript has been classified as "${contextTheme}" with ${(contextConfidence * 100).toFixed(0)}% confidence.
+${pass.contextNote ? `\n${pass.contextNote}\n` : ""}
 
 Analyze the following transcript and extract insights related to: ${pass.focus}
 

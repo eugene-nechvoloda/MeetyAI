@@ -29,6 +29,10 @@ model Transcript {
   language          String              @default("en")
   translated        Boolean             @default(false)
   
+  // Context classification
+  context_theme     String?             // research_call, feedback_session, usability_testing, sales_demo, support_call, general_interview, etc.
+  context_confidence Float?             // 0.0 to 1.0
+  
   // Origin-specific metadata
   file_name         String?
   file_type         String?
