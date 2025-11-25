@@ -7,7 +7,7 @@
  * - Link: domain — slug TitleCase (use quick metadata if feasible)
  */
 
-import { TranscriptOrigin } from "@prisma/client";
+import { TranscriptOrigin } from "./prismaTypes";
 
 interface TitleDerivationInput {
   origin: TranscriptOrigin;

@@ -8,7 +8,7 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { createLogger } from "../utils/logger";
 import { getPrisma } from "../utils/database";
-import { InsightType, InsightStatus } from "@prisma/client";
+import { InsightType, InsightStatus } from "../utils/prismaTypes";
 
 const evidenceQuoteSchema = z.object({
   quote: z.string(),
