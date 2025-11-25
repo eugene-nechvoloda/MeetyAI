@@ -79,6 +79,8 @@ export const mastra = new Mastra({
       "inngest/hono",
       "hono",
       "hono/streaming",
+      "@prisma/client",
+      ".prisma/client",
     ],
     // sourcemaps are good for debugging.
     sourcemap: true,
