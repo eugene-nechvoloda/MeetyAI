@@ -218,6 +218,114 @@ function createReactToMessage<
   };
 }
 
+async function handleInteractivePayload(
+  c: any,
+  payload: any,
+  logger: any
+): Promise<Response> {
+  const { slack } = await getClient();
+  const userId = payload.user?.id;
+  const actionId = payload.actions?.[0]?.action_id;
+  
+  logger?.info("🔘 [Slack] Handling interactive action", { actionId, userId });
+  
+  try {
+    // Import App Home view builders
+    const { 
+      buildHomeTab, 
+      buildTranscriptsTab, 
+      buildInsightsTab,
+      buildUploadTranscriptModal,
+      buildExportSettingsModal 
+    } = await import("../mastra/ui/appHomeViews");
+    
+    // Handle tab navigation
+    if (actionId === "switch_to_home_tab") {
+      const view = await buildHomeTab(userId);
+      await slack.views.publish({ user_id: userId, view: view as any });
+      logger?.info("✅ [Slack] Switched to Home tab");
+      return c.text("", 200);
+    }
+    
+    if (actionId === "switch_to_transcripts_tab") {
+      const view = await buildTranscriptsTab(userId);
+      await slack.views.publish({ user_id: userId, view: view as any });
+      logger?.info("✅ [Slack] Switched to Transcripts tab");
+      return c.text("", 200);
+    }
+    
+    if (actionId === "switch_to_insights_tab") {
+      const view = await buildInsightsTab(userId);
+      await slack.views.publish({ user_id: userId, view: view as any });
+      logger?.info("✅ [Slack] Switched to Insights tab");
+      return c.text("", 200);
+    }
+    
+    // Handle Upload Transcript button - open modal
+    if (actionId === "open_upload_transcript_modal") {
+      const modal = buildUploadTranscriptModal();
+      await slack.views.open({
+        trigger_id: payload.trigger_id,
+        view: modal as any,
+      });
+      logger?.info("✅ [Slack] Opened upload transcript modal");
+      return c.text("", 200);
+    }
+    
+    // Handle Settings button - open export settings modal
+    if (actionId === "open_export_settings") {
+      const modal = await buildExportSettingsModal(userId);
+      await slack.views.open({
+        trigger_id: payload.trigger_id,
+        view: modal as any,
+      });
+      logger?.info("✅ [Slack] Opened export settings modal");
+      return c.text("", 200);
+    }
+    
+    // Handle modal submissions
+    if (payload.type === "view_submission") {
+      const callbackId = payload.view?.callback_id;
+      logger?.info("📝 [Slack] Modal submission", { callbackId });
+      
+      if (callbackId === "upload_transcript_modal") {
+        // Handle transcript upload submission
+        const values = payload.view?.state?.values;
+        const transcriptText = values?.transcript_input?.transcript_text?.value;
+        const title = values?.title_input?.title_text?.value || "Untitled Transcript";
+        
+        logger?.info("📄 [Slack] Transcript submitted", { 
+          title,
+          textLength: transcriptText?.length 
+        });
+        
+        // TODO: Process the transcript through the workflow
+        // For now, acknowledge the submission
+        return c.json({ response_action: "clear" });
+      }
+      
+      if (callbackId === "export_settings_modal") {
+        // Handle export settings submission
+        const values = payload.view?.state?.values;
+        logger?.info("⚙️ [Slack] Export settings saved", { values });
+        
+        // TODO: Save user preferences to database
+        return c.json({ response_action: "clear" });
+      }
+    }
+    
+    logger?.info("📝 [Slack] Unhandled action", { actionId, type: payload.type });
+    return c.text("", 200);
+    
+  } catch (error) {
+    logger?.error("❌ [Slack] Error handling interactive payload", {
+      error: format(error),
+      actionId,
+    });
+    return c.text("", 200);
+  }
+}
+
 export function registerSlackTrigger<
   Env extends { Variables: { mastra: Mastra } },
   TState extends z.ZodObject<any>,
@@ -241,7 +349,25 @@ export function registerSlackTrigger<
         const mastra = c.get("mastra");
         const logger = mastra.getLogger();
         try {
-          const payload = await c.req.json();
+          const contentType = c.req.header("content-type") || "";
+          let payload: any;
+          
+          // Handle URL-encoded form data (interactive components like buttons)
+          if (contentType.includes("application/x-www-form-urlencoded")) {
+            const formData = await c.req.formData();
+            const payloadString = formData.get("payload");
+            if (payloadString && typeof payloadString === "string") {
+              payload = JSON.parse(payloadString);
+              logger?.info("📝 [Slack] Interactive payload received", { payload });
+              
+              // Handle interactive actions (button clicks, etc.)
+              return await handleInteractivePayload(c, payload, logger);
+            }
+            return c.text("OK", 200);
+          }
+          
+          // Handle JSON payloads (Events API)
+          payload = await c.req.json();
           const { slack, auth } = await getClient();
           const reactToMessage = createReactToMessage({ slack, logger });
 

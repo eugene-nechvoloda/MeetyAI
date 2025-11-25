@@ -7,7 +7,7 @@
  * - Insights: Insight list with export functionality
  */
 
-import { getPrisma } from "../utils/database";
+import { getPrismaAsync } from "../utils/database";
 
 // Tab types for navigation
 type TabType = "home" | "transcripts" | "insights";
@@ -63,7 +63,7 @@ export async function buildHomeTab(userId: string) {
   let statsAvailable = true;
   
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrismaAsync();
     
     // Get quick stats
     transcriptCount = await prisma.transcript.count({
@@ -136,7 +136,7 @@ export async function buildHomeTab(userId: string) {
               type: "plain_text",
               text: "📤 Upload Transcript",
             },
-            action_id: "open_upload_modal",
+            action_id: "open_upload_transcript_modal",
             style: "primary",
           },
           {
@@ -182,7 +182,7 @@ export async function buildTranscriptsTab(userId: string) {
             type: "plain_text",
             text: "➕ Upload New Transcript",
           },
-          action_id: "open_upload_modal",
+          action_id: "open_upload_transcript_modal",
           style: "primary",
         },
       ],
@@ -193,7 +193,7 @@ export async function buildTranscriptsTab(userId: string) {
   ];
   
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrismaAsync();
     
     // Get transcripts for this user
     const transcripts = await prisma.transcript.findMany({
@@ -300,7 +300,7 @@ export async function buildInsightsTab(userId: string) {
             type: "plain_text",
             text: "⚙️ Export Settings",
           },
-          action_id: "open_insights_export_settings",
+          action_id: "open_export_settings",
         },
       ],
     },
@@ -310,7 +310,7 @@ export async function buildInsightsTab(userId: string) {
   ];
   
   try {
-    const prisma = getPrisma();
+    const prisma = await getPrismaAsync();
     
     // Get insights for this user
     const insights = await prisma.insight.findMany({
@@ -395,5 +395,178 @@ export async function buildInsightsTab(userId: string) {
   return {
     type: "home",
     blocks,
+  };
+}
+
+/**
+ * Build the upload transcript modal
+ */
+export function buildUploadTranscriptModal() {
+  return {
+    type: "modal",
+    callback_id: "upload_transcript_modal",
+    title: {
+      type: "plain_text",
+      text: "Upload Transcript",
+    },
+    submit: {
+      type: "plain_text",
+      text: "Analyze",
+    },
+    close: {
+      type: "plain_text",
+      text: "Cancel",
+    },
+    blocks: [
+      {
+        type: "input",
+        block_id: "title_input",
+        label: {
+          type: "plain_text",
+          text: "Transcript Title",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "title_text",
+          placeholder: {
+            type: "plain_text",
+            text: "e.g., Sales Call with ACME Corp",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "transcript_input",
+        label: {
+          type: "plain_text",
+          text: "Transcript Content",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "transcript_text",
+          multiline: true,
+          placeholder: {
+            type: "plain_text",
+            text: "Paste your transcript here...",
+          },
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "💡 MeetyAI will analyze your transcript and extract insights automatically.",
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * Build the export settings modal with 14 insight types as checkboxes
+ */
+export async function buildExportSettingsModal(userId: string) {
+  const insightTypes = [
+    { value: "pain", label: "😣 Pain Points", description: "Problems and frustrations" },
+    { value: "blocker", label: "🚫 Blockers", description: "Obstacles preventing progress" },
+    { value: "feature_request", label: "✨ Feature Requests", description: "Desired capabilities" },
+    { value: "idea", label: "💭 Ideas", description: "Creative suggestions" },
+    { value: "gain", label: "📈 Gains", description: "Positive outcomes and benefits" },
+    { value: "outcome", label: "🎯 Outcomes", description: "Desired results" },
+    { value: "objection", label: "⚠️ Objections", description: "Concerns and hesitations" },
+    { value: "buying_signal", label: "💰 Buying Signals", description: "Purchase intent indicators" },
+    { value: "question", label: "❓ Questions", description: "Unanswered queries" },
+    { value: "feedback", label: "💬 Feedback", description: "General input and reactions" },
+    { value: "confusion", label: "😵 Confusion", description: "Unclear or misunderstood topics" },
+    { value: "opportunity", label: "🚀 Opportunities", description: "Potential growth areas" },
+    { value: "sentiment", label: "❤️ Sentiment", description: "Emotional tone and attitude" },
+    { value: "insight", label: "💡 General Insights", description: "Other valuable observations" },
+  ];
+  
+  const checkboxOptions = insightTypes.map(type => ({
+    text: {
+      type: "plain_text" as const,
+      text: type.label,
+    },
+    description: {
+      type: "plain_text" as const,
+      text: type.description,
+    },
+    value: type.value,
+  }));
+  
+  return {
+    type: "modal",
+    callback_id: "export_settings_modal",
+    title: {
+      type: "plain_text",
+      text: "Export Settings",
+    },
+    submit: {
+      type: "plain_text",
+      text: "Save Settings",
+    },
+    close: {
+      type: "plain_text",
+      text: "Cancel",
+    },
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Select insight types to include in exports:*",
+        },
+      },
+      {
+        type: "input",
+        block_id: "insight_types_selection",
+        label: {
+          type: "plain_text",
+          text: "Insight Types",
+        },
+        element: {
+          type: "checkboxes",
+          action_id: "selected_insight_types",
+          options: checkboxOptions,
+          initial_options: checkboxOptions, // All selected by default
+        },
+      },
+      {
+        type: "divider",
+      },
+      {
+        type: "input",
+        block_id: "confidence_threshold",
+        label: {
+          type: "plain_text",
+          text: "Minimum Confidence (%)",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "confidence_value",
+          initial_value: "50",
+          placeholder: {
+            type: "plain_text",
+            text: "50",
+          },
+        },
+        hint: {
+          type: "plain_text",
+          text: "Only export insights above this confidence threshold",
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "⚙️ These settings apply to all future exports.",
+          },
+        ],
+      },
+    ],
   };
 }
