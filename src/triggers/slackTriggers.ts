@@ -283,6 +283,76 @@ async function handleInteractivePayload(
       return c.text("", 200);
     }
     
+    // Handle Configure Linear button (from Settings hub)
+    if (actionId === "configure_linear") {
+      const { buildLinearConfigModal } = await import("../mastra/ui/appHomeViews");
+      const { getPrismaAsync } = await import("../mastra/utils/database");
+      const prisma = await getPrismaAsync();
+      
+      const existingConfig = await prisma.exportConfig.findFirst({
+        where: { user_id: userId, provider: "linear" },
+      });
+      
+      const modal = buildLinearConfigModal(existingConfig);
+      await slack.views.push({
+        trigger_id: payload.trigger_id,
+        view: modal as any,
+      });
+      logger?.info("✅ [Slack] Opened Linear config modal");
+      return c.text("", 200);
+    }
+    
+    // Handle Configure Airtable button (from Settings hub)
+    if (actionId === "configure_airtable") {
+      const { buildAirtableConfigModal } = await import("../mastra/ui/appHomeViews");
+      const { getPrismaAsync } = await import("../mastra/utils/database");
+      const prisma = await getPrismaAsync();
+      
+      const existingConfig = await prisma.exportConfig.findFirst({
+        where: { user_id: userId, provider: "airtable" },
+      });
+      
+      const modal = buildAirtableConfigModal(existingConfig);
+      await slack.views.push({
+        trigger_id: payload.trigger_id,
+        view: modal as any,
+      });
+      logger?.info("✅ [Slack] Opened Airtable config modal");
+      return c.text("", 200);
+    }
+    
+    // Handle Configure Zoom button (from Settings hub)
+    if (actionId === "configure_zoom") {
+      const { buildZoomConfigModal } = await import("../mastra/ui/appHomeViews");
+      const { getPrismaAsync } = await import("../mastra/utils/database");
+      const prisma = await getPrismaAsync();
+      
+      // Zoom uses ImportSource table, not ExportConfig
+      const existingConfig = await prisma.importSource.findFirst({
+        where: { user_id: userId, provider: "zoom" },
+      });
+      
+      const modal = buildZoomConfigModal(existingConfig);
+      await slack.views.push({
+        trigger_id: payload.trigger_id,
+        view: modal as any,
+      });
+      logger?.info("✅ [Slack] Opened Zoom config modal");
+      return c.text("", 200);
+    }
+    
+    // Handle Configure Field Mapping button (from Settings hub)
+    if (actionId === "configure_field_mapping") {
+      const { buildFieldMappingModal } = await import("../mastra/ui/appHomeViews");
+      const modal = await buildFieldMappingModal(userId);
+      await slack.views.push({
+        trigger_id: payload.trigger_id,
+        view: modal as any,
+      });
+      logger?.info("✅ [Slack] Opened field mapping modal");
+      return c.text("", 200);
+    }
+    
     // Handle Export to Linear button
     if (actionId === "export_all_linear") {
       logger?.info("📤 [Slack] Export to Linear triggered", { userId });
@@ -577,6 +647,328 @@ async function handleInteractivePayload(
           logger?.error("❌ [Slack] Error saving settings", {
             error: format(error),
           });
+          return c.json({ response_action: "clear" });
+        }
+      }
+      
+      // Handle Linear configuration modal submission
+      if (callbackId === "linear_config_modal") {
+        const values = payload.view?.state?.values;
+        logger?.info("🔧 [Slack] Linear config submission received");
+        
+        try {
+          const { getPrismaAsync } = await import("../mastra/utils/database");
+          const { encrypt, validateEncryptionKey } = await import("../mastra/utils/encryption");
+          const prisma = await getPrismaAsync();
+          
+          // Validate encryption key is available
+          if (!validateEncryptionKey()) {
+            logger?.error("❌ [Slack] Encryption key not configured");
+            return c.json({
+              response_action: "errors",
+              errors: {
+                linear_api_key: "System configuration error. Please contact support.",
+              },
+            });
+          }
+          
+          const apiKey = values?.linear_api_key?.api_key_input?.value;
+          const teamId = values?.linear_team_id?.team_id_input?.value;
+          const label = values?.linear_label?.label_input?.value || "My Linear Workspace";
+          
+          if (!apiKey || !teamId) {
+            return c.json({
+              response_action: "errors",
+              errors: {
+                linear_api_key: !apiKey ? "API key is required" : undefined,
+                linear_team_id: !teamId ? "Team ID is required" : undefined,
+              },
+            });
+          }
+          
+          // Encrypt credentials
+          const encryptedCredentials = encrypt(JSON.stringify({ api_key: apiKey }));
+          
+          // Find existing config or create new
+          const existingConfig = await prisma.exportConfig.findFirst({
+            where: { user_id: userId, provider: "linear" },
+          });
+          
+          if (existingConfig) {
+            await prisma.exportConfig.update({
+              where: { id: existingConfig.id },
+              data: {
+                label,
+                enabled: true,
+                credentials_encrypted: encryptedCredentials,
+                team_id: teamId,
+              },
+            });
+          } else {
+            await prisma.exportConfig.create({
+              data: {
+                user_id: userId,
+                provider: "linear",
+                label,
+                enabled: true,
+                credentials_encrypted: encryptedCredentials,
+                team_id: teamId,
+                field_mapping: { title: "title", description: "description" },
+              },
+            });
+          }
+          
+          logger?.info("✅ [Slack] Linear config saved", { userId, teamId });
+          
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "✅ Linear has been configured successfully! You can now export insights to Linear.",
+          });
+          
+          return c.json({ response_action: "clear" });
+        } catch (error) {
+          logger?.error("❌ [Slack] Error saving Linear config", { error: format(error) });
+          return c.json({
+            response_action: "errors",
+            errors: {
+              linear_api_key: "Failed to save configuration. Please try again.",
+            },
+          });
+        }
+      }
+      
+      // Handle Airtable configuration modal submission
+      if (callbackId === "airtable_config_modal") {
+        const values = payload.view?.state?.values;
+        logger?.info("🔧 [Slack] Airtable config submission received");
+        
+        try {
+          const { getPrismaAsync } = await import("../mastra/utils/database");
+          const { encrypt, validateEncryptionKey } = await import("../mastra/utils/encryption");
+          const prisma = await getPrismaAsync();
+          
+          // Validate encryption key is available
+          if (!validateEncryptionKey()) {
+            logger?.error("❌ [Slack] Encryption key not configured");
+            return c.json({
+              response_action: "errors",
+              errors: {
+                airtable_api_key: "System configuration error. Please contact support.",
+              },
+            });
+          }
+          
+          const apiKey = values?.airtable_api_key?.api_key_input?.value;
+          const baseId = values?.airtable_base_id?.base_id_input?.value;
+          const tableName = values?.airtable_table_name?.table_name_input?.value || "Insights";
+          const label = values?.airtable_label?.label_input?.value || "My Airtable Base";
+          
+          if (!apiKey || !baseId) {
+            return c.json({
+              response_action: "errors",
+              errors: {
+                airtable_api_key: !apiKey ? "API key is required" : undefined,
+                airtable_base_id: !baseId ? "Base ID is required" : undefined,
+              },
+            });
+          }
+          
+          // Encrypt credentials
+          const encryptedCredentials = encrypt(JSON.stringify({ 
+            api_key: apiKey,
+            base_id: baseId,
+            table_name: tableName,
+          }));
+          
+          // Find existing config or create new
+          const existingConfig = await prisma.exportConfig.findFirst({
+            where: { user_id: userId, provider: "airtable" },
+          });
+          
+          if (existingConfig) {
+            await prisma.exportConfig.update({
+              where: { id: existingConfig.id },
+              data: {
+                label,
+                enabled: true,
+                credentials_encrypted: encryptedCredentials,
+                base_id: baseId,
+                table_name: tableName,
+              },
+            });
+          } else {
+            await prisma.exportConfig.create({
+              data: {
+                user_id: userId,
+                provider: "airtable",
+                label,
+                enabled: true,
+                credentials_encrypted: encryptedCredentials,
+                base_id: baseId,
+                table_name: tableName,
+                field_mapping: { title: "Title", description: "Description" },
+              },
+            });
+          }
+          
+          logger?.info("✅ [Slack] Airtable config saved", { userId, baseId });
+          
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "✅ Airtable has been configured successfully! You can now export insights to Airtable.",
+          });
+          
+          return c.json({ response_action: "clear" });
+        } catch (error) {
+          logger?.error("❌ [Slack] Error saving Airtable config", { error: format(error) });
+          return c.json({
+            response_action: "errors",
+            errors: {
+              airtable_api_key: "Failed to save configuration. Please try again.",
+            },
+          });
+        }
+      }
+      
+      // Handle Zoom configuration modal submission
+      if (callbackId === "zoom_config_modal") {
+        const values = payload.view?.state?.values;
+        logger?.info("🔧 [Slack] Zoom config submission received");
+        
+        try {
+          const { getPrismaAsync } = await import("../mastra/utils/database");
+          const { encrypt, validateEncryptionKey } = await import("../mastra/utils/encryption");
+          const prisma = await getPrismaAsync();
+          
+          // Validate encryption key is available
+          if (!validateEncryptionKey()) {
+            logger?.error("❌ [Slack] Encryption key not configured");
+            return c.json({
+              response_action: "errors",
+              errors: {
+                zoom_account_id: "System configuration error. Please contact support.",
+              },
+            });
+          }
+          
+          const accountId = values?.zoom_account_id?.account_id_input?.value;
+          const clientId = values?.zoom_client_id?.client_id_input?.value;
+          const clientSecret = values?.zoom_client_secret?.client_secret_input?.value;
+          
+          if (!accountId || !clientId || !clientSecret) {
+            return c.json({
+              response_action: "errors",
+              errors: {
+                zoom_account_id: !accountId ? "Account ID is required" : undefined,
+                zoom_client_id: !clientId ? "Client ID is required" : undefined,
+                zoom_client_secret: !clientSecret ? "Client Secret is required" : undefined,
+              },
+            });
+          }
+          
+          // Encrypt credentials (don't log actual values!)
+          const encryptedCredentials = encrypt(JSON.stringify({ 
+            account_id: accountId,
+            client_id: clientId,
+            client_secret: clientSecret,
+          }));
+          
+          // Zoom uses ImportSource table
+          const existingConfig = await prisma.importSource.findFirst({
+            where: { user_id: userId, provider: "zoom" },
+          });
+          
+          if (existingConfig) {
+            await prisma.importSource.update({
+              where: { id: existingConfig.id },
+              data: {
+                enabled: true,
+                credentials_encrypted: encryptedCredentials,
+              },
+            });
+          } else {
+            await prisma.importSource.create({
+              data: {
+                user_id: userId,
+                provider: "zoom",
+                label: "Zoom Meeting Transcripts",
+                enabled: true,
+                credentials_encrypted: encryptedCredentials,
+                schedule: "0 * * * *", // Hourly
+              },
+            });
+          }
+          
+          logger?.info("✅ [Slack] Zoom config saved", { userId });
+          
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "✅ Zoom has been configured successfully! MeetyAI will automatically import your meeting transcripts every hour.",
+          });
+          
+          return c.json({ response_action: "clear" });
+        } catch (error) {
+          logger?.error("❌ [Slack] Error saving Zoom config", { error: format(error) });
+          return c.json({
+            response_action: "errors",
+            errors: {
+              zoom_account_id: "Failed to save configuration. Please try again.",
+            },
+          });
+        }
+      }
+      
+      // Handle Field Mapping modal submission
+      if (callbackId === "field_mapping_modal") {
+        const values = payload.view?.state?.values;
+        logger?.info("🔧 [Slack] Field mapping submission", { values });
+        
+        try {
+          const { getPrismaAsync } = await import("../mastra/utils/database");
+          const prisma = await getPrismaAsync();
+          
+          // Get all configs and update their field mappings
+          const configs = await prisma.exportConfig.findMany({
+            where: { user_id: userId },
+          });
+          
+          for (const config of configs) {
+            const newMapping: Record<string, string> = {};
+            
+            if (config.provider === "linear") {
+              const titleField = values?.[`linear_title_field_${config.id}`]?.field_input?.value;
+              const descField = values?.[`linear_description_field_${config.id}`]?.field_input?.value;
+              if (titleField) newMapping.title = titleField;
+              if (descField) newMapping.description = descField;
+            }
+            
+            if (config.provider === "airtable") {
+              const titleField = values?.[`airtable_title_field_${config.id}`]?.field_input?.value;
+              const descField = values?.[`airtable_description_field_${config.id}`]?.field_input?.value;
+              const typeField = values?.[`airtable_type_field_${config.id}`]?.field_input?.value;
+              if (titleField) newMapping.title = titleField;
+              if (descField) newMapping.description = descField;
+              if (typeField) newMapping.type = typeField;
+            }
+            
+            if (Object.keys(newMapping).length > 0) {
+              await prisma.exportConfig.update({
+                where: { id: config.id },
+                data: { field_mapping: newMapping },
+              });
+            }
+          }
+          
+          logger?.info("✅ [Slack] Field mappings saved", { userId });
+          
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "✅ Field mappings have been updated!",
+          });
+          
+          return c.json({ response_action: "clear" });
+        } catch (error) {
+          logger?.error("❌ [Slack] Error saving field mappings", { error: format(error) });
           return c.json({ response_action: "clear" });
         }
       }
