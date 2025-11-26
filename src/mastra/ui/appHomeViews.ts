@@ -399,7 +399,7 @@ export async function buildInsightsTab(userId: string) {
 }
 
 /**
- * Build the upload transcript modal
+ * Build the upload transcript modal with both text paste and file upload options
  */
 export function buildUploadTranscriptModal() {
   return {
@@ -435,11 +435,49 @@ export function buildUploadTranscriptModal() {
         },
       },
       {
+        type: "divider",
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: "*Choose how to add your transcript:*\nYou can either paste the text directly OR upload a file (txt, vtt, srt, docx)",
+        },
+      },
+      {
         type: "input",
-        block_id: "transcript_input",
+        block_id: "file_input",
+        optional: true,
         label: {
           type: "plain_text",
-          text: "Transcript Content",
+          text: "Upload File",
+        },
+        element: {
+          type: "file_input",
+          action_id: "transcript_file",
+          filetypes: ["txt", "vtt", "srt", "docx", "pdf"],
+          max_files: 1,
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "_Supported formats: TXT, VTT, SRT, DOCX, PDF_",
+          },
+        ],
+      },
+      {
+        type: "divider",
+      },
+      {
+        type: "input",
+        block_id: "transcript_input",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Or Paste Transcript Text",
         },
         element: {
           type: "plain_text_input",

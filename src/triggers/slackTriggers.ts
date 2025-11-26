@@ -289,28 +289,152 @@ async function handleInteractivePayload(
       logger?.info("📝 [Slack] Modal submission", { callbackId });
       
       if (callbackId === "upload_transcript_modal") {
-        // Handle transcript upload submission
         const values = payload.view?.state?.values;
         const transcriptText = values?.transcript_input?.transcript_text?.value;
         const title = values?.title_input?.title_text?.value || "Untitled Transcript";
+        const fileInfo = values?.file_input?.transcript_file?.files?.[0];
         
-        logger?.info("📄 [Slack] Transcript submitted", { 
+        logger?.info("📄 [Slack] Transcript submission received", { 
           title,
-          textLength: transcriptText?.length 
+          textLength: transcriptText?.length || 0,
+          hasFile: !!fileInfo,
+          fileName: fileInfo?.name,
+          fileType: fileInfo?.filetype,
         });
         
-        // TODO: Process the transcript through the workflow
-        // For now, acknowledge the submission
-        return c.json({ response_action: "clear" });
+        try {
+          const { ingestTranscript } = await import("../mastra/services/transcriptIngestion");
+          const { TranscriptOrigin } = await import("@prisma/client");
+          
+          let content = "";
+          let origin: typeof TranscriptOrigin[keyof typeof TranscriptOrigin] = TranscriptOrigin.paste;
+          let metadata: any = {};
+          
+          if (fileInfo) {
+            logger?.info("📎 [Slack] Processing file upload", {
+              fileId: fileInfo.id,
+              fileName: fileInfo.name,
+              url: fileInfo.url_private,
+            });
+            
+            const fileResponse = await fetch(fileInfo.url_private, {
+              headers: {
+                Authorization: `Bearer ${(await getClient()).slack.token}`,
+              },
+            });
+            
+            if (fileResponse.ok) {
+              content = await fileResponse.text();
+              origin = TranscriptOrigin.file_upload;
+              metadata = {
+                fileName: fileInfo.name,
+                fileType: fileInfo.filetype,
+              };
+              logger?.info("✅ [Slack] File content downloaded", {
+                contentLength: content.length,
+              });
+            } else {
+              logger?.error("❌ [Slack] Failed to download file", {
+                status: fileResponse.status,
+              });
+              return c.json({
+                response_action: "errors",
+                errors: {
+                  file_input: "Failed to download file. Please try again or paste the text directly.",
+                },
+              });
+            }
+          } else if (transcriptText) {
+            content = transcriptText;
+            origin = TranscriptOrigin.paste;
+          } else {
+            return c.json({
+              response_action: "errors",
+              errors: {
+                transcript_input: "Please either upload a file or paste transcript text.",
+              },
+            });
+          }
+          
+          const result = await ingestTranscript({
+            title,
+            content,
+            origin,
+            slackUserId: userId,
+            metadata,
+          }, logger);
+          
+          if (result.success) {
+            logger?.info("✅ [Slack] Transcript ingested successfully", {
+              transcriptId: result.transcriptId,
+              title,
+            });
+            
+            await slack.chat.postMessage({
+              channel: userId,
+              text: `✅ Transcript "${title}" uploaded successfully!\n\nYour transcript is being processed. You'll find the insights in the *Insights* tab once the analysis is complete.`,
+            });
+            
+            return c.json({ response_action: "clear" });
+          } else {
+            logger?.error("❌ [Slack] Ingestion failed", { error: result.error });
+            return c.json({
+              response_action: "errors",
+              errors: {
+                transcript_input: `Failed to save transcript: ${result.error}`,
+              },
+            });
+          }
+        } catch (error) {
+          logger?.error("❌ [Slack] Error processing transcript submission", {
+            error: format(error),
+          });
+          return c.json({
+            response_action: "errors",
+            errors: {
+              transcript_input: "An error occurred. Please try again.",
+            },
+          });
+        }
       }
       
       if (callbackId === "export_settings_modal") {
-        // Handle export settings submission
         const values = payload.view?.state?.values;
         logger?.info("⚙️ [Slack] Export settings saved", { values });
         
-        // TODO: Save user preferences to database
-        return c.json({ response_action: "clear" });
+        try {
+          const { getPrismaAsync } = await import("../mastra/utils/database");
+          const prisma = await getPrismaAsync();
+          
+          const selectedTypes = values?.insight_types_selection?.selected_insight_types?.selected_options?.map(
+            (opt: any) => opt.value
+          ) || [];
+          const confidenceValue = parseInt(values?.confidence_threshold?.confidence_value?.value || "50", 10);
+          
+          await prisma.userSetting.upsert({
+            where: { user_id: userId },
+            create: {
+              user_id: userId,
+              research_depth: confidenceValue / 100,
+            },
+            update: {
+              research_depth: confidenceValue / 100,
+            },
+          });
+          
+          logger?.info("✅ [Slack] User settings saved", {
+            userId,
+            selectedTypes,
+            confidenceValue,
+          });
+          
+          return c.json({ response_action: "clear" });
+        } catch (error) {
+          logger?.error("❌ [Slack] Error saving settings", {
+            error: format(error),
+          });
+          return c.json({ response_action: "clear" });
+        }
       }
     }
     

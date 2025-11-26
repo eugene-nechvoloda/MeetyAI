@@ -8,8 +8,9 @@ import { NonRetriableError } from "inngest";
 import { z } from "zod";
 
 import { sharedPostgresStorage } from "./storage";
-import { inngest, inngestServe } from "./inngest";
+import { inngest, inngestServe, registerCronWorkflow } from "./inngest";
 import { metiyWorkflow } from "./workflows/metiyWorkflow";
+import { zoomImportWorkflow } from "./workflows/zoomImportWorkflow";
 import { metiyAgent } from "./agents/metiyAgent";
 import { registerSlackTrigger } from "../triggers/slackTriggers";
 import type { Mastra as MastraType } from "@mastra/core";
@@ -56,9 +57,12 @@ class ProductionPinoLogger extends MastraLogger {
   }
 }
 
+// Register hourly Zoom import cron job (runs as Inngest function, not in Mastra UI)
+registerCronWorkflow("0 * * * *", zoomImportWorkflow);
+
 export const mastra = new Mastra({
   storage: sharedPostgresStorage,
-  // Register MeetyAI workflow
+  // Register MeetyAI workflow (only one workflow supported in Mastra UI)
   workflows: { metiyWorkflow },
   // Register MeetyAI agent
   agents: { metiyAgent },
@@ -131,70 +135,97 @@ export const mastra = new Mastra({
         // 3. Establishing a publish-subscribe system for real-time monitoring
         //    through the workflow:${workflowId}:${runId} channel
       },
-      // Webhook endpoint for n8n transcript integration
+      // Webhook endpoint for external transcript integration (n8n, Zapier, custom APIs)
       {
         path: "/api/webhooks/transcript",
         method: "POST",
         createHandler: async ({ mastra }) => {
           return async (c) => {
             const logger = mastra.getLogger();
-            logger?.info("🔗 [MeetyAI Webhook] Received n8n transcript request");
+            logger?.info("🔗 [MeetyAI Webhook] Received transcript webhook request");
             
             try {
+              // Optional authentication via X-MeetyAI-Secret header
+              const authHeader = c.req.header("X-MeetyAI-Secret");
+              const expectedSecret = process.env.MEETYAI_WEBHOOK_SECRET;
+              if (expectedSecret && authHeader !== expectedSecret) {
+                logger?.warn("🚫 [MeetyAI Webhook] Unauthorized request");
+                return c.json({ success: false, error: "Unauthorized" }, 401);
+              }
+              
               const body = await c.req.json();
               
-              // Validate required fields
-              if (!body.transcript || !body.slackUserId) {
-                logger?.error("❌ [MeetyAI Webhook] Missing required fields", { body });
+              // Support both old format (transcript) and new format (content)
+              const content = body.content || body.transcript;
+              const userId = body.userId || body.slackUserId;
+              const title = body.title || body.meetingTitle || "Untitled Transcript";
+              
+              if (!content || !userId) {
+                logger?.error("❌ [MeetyAI Webhook] Missing required fields", { 
+                  hasContent: !!content,
+                  hasUserId: !!userId,
+                });
                 return c.json({
                   success: false,
-                  error: "Missing required fields: transcript and slackUserId are required",
+                  error: "Missing required fields: content/transcript and userId/slackUserId are required",
                 }, 400);
               }
               
-              const {
-                transcript,
-                slackUserId,
-                source = "n8n",
-                meetingId,
-                meetingTitle,
-                timestamp,
-              } = body;
+              const source = body.source || "custom_api";
               
               logger?.info("📥 [MeetyAI Webhook] Processing transcript", {
                 source,
-                meetingId,
-                transcriptLength: transcript.length,
-                slackUserId,
+                title,
+                contentLength: content.length,
+                userId,
               });
               
-              // Create a unique thread ID for this webhook request
-              const threadId = `webhook/${source}/${meetingId || Date.now()}`;
+              // Use the shared ingestion service
+              const { ingestTranscript } = await import("./services/transcriptIngestion");
+              const { TranscriptOrigin } = await import("@prisma/client");
               
-              // Prepare message for agent
-              const message = `New transcript received from ${source}${meetingTitle ? ` - "${meetingTitle}"` : ""}${meetingId ? ` (ID: ${meetingId})` : ""}${timestamp ? ` at ${timestamp}` : ""}:\n\n${transcript}`;
+              // Map source to TranscriptOrigin
+              let origin: typeof TranscriptOrigin[keyof typeof TranscriptOrigin] = TranscriptOrigin.custom_api;
+              if (source === "zoom") origin = TranscriptOrigin.zoom_import;
+              else if (source === "fireflies") origin = TranscriptOrigin.fireflies_import;
+              else if (source === "link") origin = TranscriptOrigin.link;
               
-              // Start MeetyAI workflow
-              const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
-              const result = await run.start({
-                inputData: {
-                  message,
-                  threadId,
-                  slackUserId,
-                  slackChannel: slackUserId, // DM channel is the user ID
-                  threadTs: undefined, // Start new thread in DM
+              const result = await ingestTranscript({
+                title,
+                content,
+                origin,
+                slackUserId: userId,
+                slackChannelId: body.channelId,
+                metadata: {
+                  fileName: body.fileName,
+                  fileType: body.fileType,
+                  linkUrl: body.linkUrl,
+                  zoomMeetingId: body.zoomMeetingId || body.meetingId,
+                  firefliesId: body.firefliesId,
+                  durationMinutes: body.durationMinutes,
+                  participantCount: body.participantCount,
+                  language: body.language,
                 },
-              });
+              }, logger);
               
-              logger?.info("✅ [MeetyAI Webhook] Workflow started successfully", {
-                status: result?.status,
+              if (!result.success) {
+                logger?.error("❌ [MeetyAI Webhook] Ingestion failed", { error: result.error });
+                return c.json({
+                  success: false,
+                  error: result.error,
+                }, 500);
+              }
+              
+              logger?.info("✅ [MeetyAI Webhook] Transcript ingested successfully", {
+                transcriptId: result.transcriptId,
+                title,
               });
               
               return c.json({
                 success: true,
-                message: "Transcript queued for processing",
-                status: result?.status,
-              });
+                transcriptId: result.transcriptId,
+                message: "Transcript received and queued for processing",
+              }, 202);
               
             } catch (error) {
               logger?.error("❌ [MeetyAI Webhook] Error processing request", {
