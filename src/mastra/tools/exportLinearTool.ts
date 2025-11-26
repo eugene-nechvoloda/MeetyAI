@@ -133,9 +133,11 @@ export const exportLinearTool = createTool({
           });
           
           // Create Linear issue
-          const issue = await linear.createIssue(issueData);
+          const issuePayload = await linear.createIssue(issueData);
+          const createdIssue = await issuePayload.issue;
+          const issueId = createdIssue?.id || "";
           
-          linearIssueIds.push(issue.issue?.id || "");
+          linearIssueIds.push(issueId);
           
           // Update insight as exported
           await prisma.insight.update({
@@ -144,7 +146,7 @@ export const exportLinearTool = createTool({
               exported: true,
               export_destinations: {
                 provider: "linear",
-                id: issue.issue?.id,
+                id: issueId,
                 exported_at: new Date().toISOString(),
               } as any,
             },

@@ -283,6 +283,150 @@ async function handleInteractivePayload(
       return c.text("", 200);
     }
     
+    // Handle Export to Linear button
+    if (actionId === "export_all_linear") {
+      logger?.info("📤 [Slack] Export to Linear triggered", { userId });
+      
+      try {
+        const { getPrismaAsync } = await import("../mastra/utils/database");
+        const prisma = await getPrismaAsync();
+        
+        // Check if Linear is configured
+        const config = await prisma.exportConfig.findFirst({
+          where: { user_id: userId, provider: "linear", enabled: true },
+        });
+        
+        if (!config) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "⚠️ Linear is not configured yet.\n\nTo export insights to Linear, please:\n1. Click *Export Settings* on the Insights tab\n2. Configure your Linear API key and team settings",
+          });
+          return c.text("", 200);
+        }
+        
+        // Get unexported insights for this user
+        const insights = await prisma.insight.findMany({
+          where: {
+            transcript: { slack_user_id: userId },
+            exported: false,
+          },
+          select: { id: true },
+        });
+        
+        if (insights.length === 0) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "ℹ️ No new insights to export. All your insights have already been exported to Linear.",
+          });
+          return c.text("", 200);
+        }
+        
+        // Execute export via the tool
+        const { exportLinearTool } = await import("../mastra/tools/exportLinearTool");
+        const { mastra } = await import("../mastra/index");
+        const insightIds = insights.map((i: { id: string }) => i.id);
+        const result = await exportLinearTool.execute({
+          context: { insightIds, userId },
+          mastra,
+          runtimeContext: {} as any,
+        });
+        
+        if (result.success) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: `✅ Successfully exported ${result.exportedCount} insight(s) to Linear!${result.failedCount > 0 ? `\n⚠️ ${result.failedCount} insight(s) failed to export.` : ""}`,
+          });
+        } else {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: `❌ Export failed: ${result.error}`,
+          });
+        }
+        
+        logger?.info("✅ [Slack] Linear export completed", result);
+        return c.text("", 200);
+      } catch (error) {
+        logger?.error("❌ [Slack] Linear export error", { error: format(error) });
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ An error occurred while exporting to Linear. Please try again.",
+        });
+        return c.text("", 200);
+      }
+    }
+    
+    // Handle Export to Airtable button
+    if (actionId === "export_all_airtable") {
+      logger?.info("📤 [Slack] Export to Airtable triggered", { userId });
+      
+      try {
+        const { getPrismaAsync } = await import("../mastra/utils/database");
+        const prisma = await getPrismaAsync();
+        
+        // Check if Airtable is configured
+        const config = await prisma.exportConfig.findFirst({
+          where: { user_id: userId, provider: "airtable", enabled: true },
+        });
+        
+        if (!config) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "⚠️ Airtable is not configured yet.\n\nTo export insights to Airtable, please:\n1. Click *Export Settings* on the Insights tab\n2. Configure your Airtable API key and base settings",
+          });
+          return c.text("", 200);
+        }
+        
+        // Get unexported insights for this user
+        const insights = await prisma.insight.findMany({
+          where: {
+            transcript: { slack_user_id: userId },
+            exported: false,
+          },
+          select: { id: true },
+        });
+        
+        if (insights.length === 0) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "ℹ️ No new insights to export. All your insights have already been exported to Airtable.",
+          });
+          return c.text("", 200);
+        }
+        
+        // Execute export via the tool
+        const { exportAirtableTool } = await import("../mastra/tools/exportAirtableTool");
+        const { mastra } = await import("../mastra/index");
+        const insightIds = insights.map((i: { id: string }) => i.id);
+        const result = await exportAirtableTool.execute({
+          context: { insightIds, userId },
+          mastra,
+          runtimeContext: {} as any,
+        });
+        
+        if (result.success) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: `✅ Successfully exported ${result.exportedCount} insight(s) to Airtable!${result.failedCount > 0 ? `\n⚠️ ${result.failedCount} insight(s) failed to export.` : ""}`,
+          });
+        } else {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: `❌ Export failed: ${result.error}`,
+          });
+        }
+        
+        logger?.info("✅ [Slack] Airtable export completed", result);
+        return c.text("", 200);
+      } catch (error) {
+        logger?.error("❌ [Slack] Airtable export error", { error: format(error) });
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ An error occurred while exporting to Airtable. Please try again.",
+        });
+        return c.text("", 200);
+      }
+    }
+    
     // Handle modal submissions
     if (payload.type === "view_submission") {
       const callbackId = payload.view?.callback_id;
