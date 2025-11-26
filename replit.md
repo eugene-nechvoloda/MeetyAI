@@ -36,16 +36,43 @@ The direct app URL (meetyai-eugenenechvolod.replit.app) returns 404 due to Mastr
 - Claude Sonnet 4.5 for 4-pass deep extraction (14 insight types)
 - Uses Replit AI Integrations (no API keys needed)
 
-## Recent Changes
-- 2025-11-26: Fixed Slack interactivity by routing through Inngest proxy URL
-- 2025-11-26: Resolved deployment routing issue - both Event Subscriptions and Interactivity use same Inngest URL
+## Transcript Ingestion
+
+All transcript sources flow through `TranscriptIngestionService` for consistent handling:
+
+### Ingestion Methods
+1. **Slack App Home Upload** - Text paste OR file attachment (via file_input element)
+2. **External Webhook** - POST `/api/webhooks/transcript` with optional X-MeetyAI-Secret auth
+3. **Zoom Import** - Hourly cron job (registered via Inngest, not in Mastra UI)
+4. **n8n/Zapier** - Via webhook endpoint with source=n8n or source=custom_api
+
+### Webhook API Format
+```json
+POST /api/webhooks/transcript
+Header: X-MeetyAI-Secret: <optional-secret>
+{
+  "content": "transcript text",
+  "userId": "slack_user_id",
+  "title": "Meeting Title",
+  "source": "zoom|fireflies|n8n|custom_api"
+}
+```
+
+### Key Files
+- `src/mastra/services/transcriptIngestion.ts` - Shared ingestion service
+- `src/mastra/workflows/zoomImportWorkflow.ts` - Zoom cron import
 
 ## User Preferences
 - Prefers GPT-5 for classification, Claude Sonnet 4.5 for extraction
-- Transcript inputs: n8n webhook, Slack App Home upload, message actions
+- Transcript inputs: n8n webhook, Slack App Home upload, message actions, Zoom import
+
+## Recent Changes
+- 2025-11-26: Implemented comprehensive transcript ingestion system
+- 2025-11-26: Added Zoom import workflow with hourly cron trigger
+- 2025-11-26: Enhanced Slack upload modal to support file attachments
+- 2025-11-26: Updated webhook endpoint with shared ingestion service
 
 ## Next Steps
-- Implement transcript processing workflow
-- Add n8n webhook endpoint for transcript ingestion
 - Build 4-pass insight extraction with Claude
 - Implement Linear/Airtable export functionality
+- Test file attachment processing flow

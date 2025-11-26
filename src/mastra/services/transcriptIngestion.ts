@@ -6,10 +6,26 @@
  * - External webhook (n8n, Zapier, custom integrations)
  * - Zoom API (cron-based import)
  * - Fireflies import
+ * 
+ * After ingestion, triggers the metiyWorkflow for analysis.
  */
 
 import { getPrismaAsync } from "../utils/database";
 import { TranscriptOrigin, TranscriptStatus } from "@prisma/client";
+
+let mastraInstance: any = null;
+
+export function setMastraInstance(instance: any) {
+  mastraInstance = instance;
+}
+
+async function getMastraLazy() {
+  if (!mastraInstance) {
+    const { mastra } = await import("../index");
+    mastraInstance = mastra;
+  }
+  return mastraInstance;
+}
 
 export interface TranscriptInput {
   title: string;
@@ -27,11 +43,13 @@ export interface TranscriptInput {
     participantCount?: number;
     language?: string;
   };
+  skipWorkflow?: boolean;
 }
 
 export interface IngestionResult {
   success: boolean;
   transcriptId?: string;
+  workflowStarted?: boolean;
   error?: string;
 }
 
@@ -91,9 +109,55 @@ export async function ingestTranscript(
       transcriptId: transcript.id,
     });
 
+    let workflowStarted = false;
+
+    if (!input.skipWorkflow) {
+      try {
+        logger?.info("🚀 [TranscriptIngestion] Triggering metiyWorkflow", {
+          transcriptId: transcript.id,
+        });
+
+        const mastra = await getMastraLazy();
+        const threadId = `transcript/${transcript.id}`;
+        const message = `Process transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${input.content}`;
+        
+        const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
+        await run.start({
+          inputData: {
+            message,
+            threadId,
+            slackUserId: input.slackUserId,
+            slackChannel: input.slackChannelId || input.slackUserId,
+            threadTs: undefined,
+            transcriptId: transcript.id,
+          },
+        });
+
+        workflowStarted = true;
+        logger?.info("✅ [TranscriptIngestion] Workflow started", {
+          transcriptId: transcript.id,
+          threadId,
+        });
+
+        await prisma.transcriptActivity.create({
+          data: {
+            transcript_id: transcript.id,
+            activity_type: "workflow_started",
+            message: "Analysis workflow started",
+          },
+        });
+      } catch (workflowError) {
+        logger?.error("⚠️ [TranscriptIngestion] Failed to start workflow", {
+          error: String(workflowError),
+          transcriptId: transcript.id,
+        });
+      }
+    }
+
     return {
       success: true,
       transcriptId: transcript.id,
+      workflowStarted,
     };
   } catch (error) {
     logger?.error("❌ [TranscriptIngestion] Failed to ingest transcript", {
