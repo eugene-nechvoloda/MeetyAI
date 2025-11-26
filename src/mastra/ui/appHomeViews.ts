@@ -441,7 +441,7 @@ export function buildUploadTranscriptModal() {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: "*Choose how to add your transcript:*\nYou can either paste the text directly OR upload a file (txt, vtt, srt, docx)",
+          text: "*Choose how to add your transcript:*\nYou can either paste the text directly OR upload a file",
         },
       },
       {
@@ -455,7 +455,6 @@ export function buildUploadTranscriptModal() {
         element: {
           type: "file_input",
           action_id: "transcript_file",
-          filetypes: ["txt", "vtt", "srt", "docx", "pdf"],
           max_files: 1,
         },
       },
@@ -464,7 +463,7 @@ export function buildUploadTranscriptModal() {
         elements: [
           {
             type: "mrkdwn",
-            text: "_Supported formats: TXT, VTT, SRT, DOCX, PDF_",
+            text: "_Supports text files, transcripts, and documents_",
           },
         ],
       },
