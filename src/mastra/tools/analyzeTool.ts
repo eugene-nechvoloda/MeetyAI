@@ -12,7 +12,7 @@
 
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { Anthropic } from "@anthropic-ai/sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "../utils/logger";
 import { getPrisma } from "../utils/database";
 import cosineSimilarity from "cosine-similarity";
@@ -67,22 +67,18 @@ export const analyzeTool = createTool({
     });
     
     try {
-      // Get Claude API key
-      const prisma = getPrisma();
-      const claudeConfig = await prisma.modelConfig.findFirst({
-        where: {
-          provider: "anthropic",
-          model_type: "analysis",
-        },
-      });
-      
-      if (!claudeConfig) {
-        throw new Error("Claude not configured for analysis. Please add API key in Settings > Models.");
+      // Use Replit AI Integrations for Claude (no API key needed)
+      if (!process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL || !process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY) {
+        throw new Error("Anthropic AI Integration not configured. Please set up Claude access in Settings.");
       }
       
-      const { decrypt } = await import("../utils/encryption");
-      const apiKey = decrypt(claudeConfig.api_key_encrypted);
-      const anthropic = new Anthropic({ apiKey });
+      const anthropic = new Anthropic({
+        apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+      });
+      
+      // Get Prisma client for database operations
+      const prisma = getPrisma();
       
       // Step 0: Context Classification using GPT-5
       logger.progress("🎯 Classifying conversation context...");
@@ -364,8 +360,8 @@ ${transcriptText}`;
         
         try {
           const response = await anthropic.messages.create({
-            model: "claude-3-5-sonnet-20241022",
-            max_tokens: 16000,
+            model: "claude-sonnet-4-5",
+            max_tokens: 8192, // Replit AI Integrations max
             temperature: 0.35, // Research depth 0.7 → temp 0.35
             messages: [{
               role: "user",
