@@ -195,9 +195,12 @@ export async function buildTranscriptsTab(userId: string) {
   try {
     const prisma = await getPrismaAsync();
     
-    // Get transcripts for this user
+    // Get transcripts for this user (excluding archived)
     const transcripts = await prisma.transcript.findMany({
-      where: { slack_user_id: userId },
+      where: { 
+        slack_user_id: userId,
+        archived: false,
+      },
       orderBy: { created_at: "desc" },
       take: 10, // Show last 10
     });
@@ -214,45 +217,87 @@ export async function buildTranscriptsTab(userId: string) {
       for (const transcript of transcripts) {
         const date = new Date(transcript.created_at).toLocaleDateString();
         
-        // Count insights for this transcript
+        // Count insights for this transcript (excluding archived)
         let insightCount = 0;
         try {
           insightCount = await prisma.insight.count({
-            where: { transcript_id: transcript.id },
+            where: { 
+              transcript_id: transcript.id,
+              archived: false,
+            },
           });
         } catch (e) {
           // Ignore count error
         }
         
-        // If no insights, show "Re-analyze" button; otherwise show "View Insights"
-        const buttonConfig = insightCount === 0
-          ? {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "🔄 Re-analyze",
-              },
-              action_id: "reanalyze_transcript",
-              value: transcript.id,
-              style: "primary",
-            }
-          : {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "View Insights",
-              },
-              action_id: "view_transcript_insights",
-              value: transcript.id,
-            };
-        
+        // Transcript info section
         blocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
             text: `*${transcript.title}*\n📅 ${date} • 💡 ${insightCount} insights${insightCount === 0 ? " ⚠️" : ""}`,
           },
-          accessory: buttonConfig,
+        });
+        
+        // Action buttons for this transcript
+        const actionButtons: any[] = [];
+        
+        // If no insights, show "Re-analyze" button; otherwise show "View Insights"
+        if (insightCount === 0) {
+          actionButtons.push({
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "🔄 Re-analyze",
+            },
+            action_id: "reanalyze_transcript",
+            value: transcript.id,
+            style: "primary",
+          });
+        } else {
+          actionButtons.push({
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "View Insights",
+            },
+            action_id: "view_transcript_insights",
+            value: transcript.id,
+          });
+        }
+        
+        // Archive button
+        actionButtons.push({
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "🗑️ Archive",
+          },
+          action_id: "archive_transcript",
+          value: transcript.id,
+          confirm: {
+            title: {
+              type: "plain_text",
+              text: "Archive Transcript",
+            },
+            text: {
+              type: "mrkdwn",
+              text: `Are you sure you want to archive "*${transcript.title}*"?\n\nThis will hide the transcript and its insights from your lists. You can contact support to restore it if needed.`,
+            },
+            confirm: {
+              type: "plain_text",
+              text: "Archive",
+            },
+            deny: {
+              type: "plain_text",
+              text: "Cancel",
+            },
+          },
+        });
+        
+        blocks.push({
+          type: "actions",
+          elements: actionButtons,
         });
         
         blocks.push({
