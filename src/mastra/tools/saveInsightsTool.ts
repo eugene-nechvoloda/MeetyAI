@@ -2,6 +2,7 @@
  * Save Insights Tool
  * 
  * Stores extracted insights to database with evidence, confidence, and duplicate flags
+ * Includes deduplication logic using content hash to prevent duplicate insights
  */
 
 import { createTool } from "@mastra/core/tools";
@@ -9,6 +10,7 @@ import { z } from "zod";
 import { createLogger } from "../utils/logger";
 import { getPrisma } from "../utils/database";
 import { InsightType, InsightStatus } from "../utils/prismaTypes";
+import * as crypto from "crypto";
 
 const evidenceQuoteSchema = z.object({
   quote: z.string(),
@@ -20,6 +22,8 @@ const insightInputSchema = z.object({
   title: z.string(),
   description: z.string(),
   type: z.string(),
+  author: z.string().optional(),
+  evidence_text: z.string().optional(),
   evidence: z.array(evidenceQuoteSchema),
   confidence: z.number(),
   timestamp_start: z.string().optional(),
@@ -29,6 +33,15 @@ const insightInputSchema = z.object({
   duplicate_of_id: z.number().optional(),
   duplicate_similarity: z.number().optional(),
 });
+
+/**
+ * Generate a content hash for deduplication
+ * Uses normalized description + evidence_text to detect duplicates
+ */
+function generateContentHash(description: string, evidenceText?: string): string {
+  const normalizedContent = `${description.toLowerCase().trim()}|${(evidenceText || "").toLowerCase().trim()}`;
+  return crypto.createHash("sha256").update(normalizedContent).digest("hex").substring(0, 32);
+}
 
 export const saveInsightsTool = createTool({
   id: "save-insights-to-database",
@@ -70,9 +83,38 @@ export const saveInsightsTool = createTool({
         throw new Error(`Transcript ${transcriptId} not found`);
       }
       
+      // Get existing content hashes for this transcript (for deduplication)
+      const existingInsights = await prisma.insight.findMany({
+        where: { transcript_id: transcriptId },
+        select: { content_hash: true, id: true },
+      });
+      const existingHashes = new Set(
+        existingInsights.map((i: { content_hash: string | null }) => i.content_hash).filter(Boolean) as string[]
+      );
+      
+      logger.info("📊 Deduplication check", {
+        existingInsightCount: existingInsights.length,
+        existingHashes: existingHashes.size,
+      });
+      
+      let skippedDuplicates = 0;
+      
       // Save each insight
       for (const insight of insights) {
         try {
+          // Generate content hash for deduplication
+          const contentHash = generateContentHash(insight.description, insight.evidence_text);
+          
+          // Check for duplicates using content hash
+          if (existingHashes.has(contentHash)) {
+            logger.info("⏭️ Skipping duplicate insight", {
+              title: insight.title,
+              contentHash,
+            });
+            skippedDuplicates++;
+            continue;
+          }
+          
           // Map string type to enum
           const mappedType = mapInsightType(insight.type);
           
@@ -82,20 +124,27 @@ export const saveInsightsTool = createTool({
               title: insight.title,
               description: insight.description,
               type: mappedType,
-              evidence_quotes: insight.evidence as any, // JSON field
+              author: insight.author || insight.speaker,
+              evidence_text: insight.evidence_text || (insight.evidence?.[0]?.quote || null),
+              evidence_quotes: insight.evidence as any,
               confidence: insight.confidence,
+              content_hash: contentHash,
               is_duplicate: insight.is_duplicate || false,
               duplicate_similarity: insight.duplicate_similarity,
               timestamp_start: insight.timestamp_start,
               timestamp_end: insight.timestamp_end,
               speaker: insight.speaker,
-              status: InsightStatus.generated,
+              status: InsightStatus.new,
               approved: false,
               exported: false,
             },
           });
           
           savedIds.push(saved.id);
+          
+          // Add the new hash to the set to prevent duplicates within the same batch
+          existingHashes.add(contentHash);
+          
         } catch (saveError) {
           logger.error("Failed to save insight", {
             insight: insight.title,
@@ -104,6 +153,12 @@ export const saveInsightsTool = createTool({
           failedCount++;
         }
       }
+      
+      logger.info("📈 Save insights summary", {
+        saved: savedIds.length,
+        skippedDuplicates,
+        failed: failedCount,
+      });
       
       // Send notification to user
       try {

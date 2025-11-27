@@ -51,10 +51,10 @@ export const InsightType = {
 export type InsightType = (typeof InsightType)[keyof typeof InsightType];
 
 export const InsightStatus = {
-  generated: "generated",
+  new: "new",
   exported: "exported",
+  export_failed: "export_failed",
   archived: "archived",
-  failed: "failed",
 } as const;
 
 export type InsightStatus = (typeof InsightStatus)[keyof typeof InsightStatus];
