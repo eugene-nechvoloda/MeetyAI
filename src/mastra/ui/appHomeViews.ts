@@ -224,21 +224,35 @@ export async function buildTranscriptsTab(userId: string) {
           // Ignore count error
         }
         
+        // If no insights, show "Re-analyze" button; otherwise show "View Insights"
+        const buttonConfig = insightCount === 0
+          ? {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "🔄 Re-analyze",
+              },
+              action_id: "reanalyze_transcript",
+              value: transcript.id,
+              style: "primary",
+            }
+          : {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "View Insights",
+              },
+              action_id: "view_transcript_insights",
+              value: transcript.id,
+            };
+        
         blocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${transcript.title}*\n📅 ${date} • 💡 ${insightCount} insights`,
+            text: `*${transcript.title}*\n📅 ${date} • 💡 ${insightCount} insights${insightCount === 0 ? " ⚠️" : ""}`,
           },
-          accessory: {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "View Insights",
-            },
-            action_id: "view_transcript_insights",
-            value: transcript.id,
-          },
+          accessory: buttonConfig,
         });
         
         blocks.push({

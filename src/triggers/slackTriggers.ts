@@ -261,6 +261,77 @@ async function handleInteractivePayload(
       return c.text("", 200);
     }
     
+    // Handle Re-analyze Transcript button - trigger workflow to re-analyze
+    if (actionId === "reanalyze_transcript") {
+      const transcriptId = payload.actions?.[0]?.value;
+      logger?.info("🔄 [Slack] Re-analyze transcript requested", { transcriptId, userId });
+      
+      try {
+        const { getPrismaAsync } = await import("../mastra/utils/database");
+        const prisma = await getPrismaAsync();
+        
+        // Get the transcript
+        const transcript = await prisma.transcript.findUnique({
+          where: { id: transcriptId },
+        });
+        
+        if (!transcript) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "❌ Transcript not found. Please try again.",
+          });
+          return c.text("", 200);
+        }
+        
+        // Send immediate feedback
+        await slack.chat.postMessage({
+          channel: userId,
+          text: `🔄 *Re-analyzing transcript: ${transcript.title}*\n\nThis may take a minute. I'll notify you when the analysis is complete.`,
+        });
+        
+        // Trigger the workflow to re-analyze
+        const { mastra: mastraInstance } = await import("../mastra/index");
+        const threadId = `transcript/${transcript.id}`;
+        const message = `Re-analyze transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${transcript.transcript_text}`;
+        
+        const run = await mastraInstance.getWorkflow("metiyWorkflow").createRunAsync();
+        await run.start({
+          inputData: {
+            message,
+            threadId,
+            slackUserId: userId,
+            slackChannel: userId,
+            threadTs: undefined,
+            transcriptId: transcript.id,
+          },
+        });
+        
+        logger?.info("✅ [Slack] Re-analysis triggered", { transcriptId, threadId });
+        
+        // Log the activity
+        await prisma.transcriptActivity.create({
+          data: {
+            transcript_id: transcript.id,
+            activity_type: "reanalysis_started",
+            message: "Re-analysis triggered by user",
+          },
+        });
+        
+        // Update the view to show pending status
+        const view = await buildTranscriptsTab(userId);
+        await slack.views.publish({ user_id: userId, view: view as any });
+        
+        return c.text("", 200);
+      } catch (error) {
+        logger?.error("❌ [Slack] Re-analysis failed", { error: format(error), transcriptId });
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ Failed to start re-analysis. Please try again.",
+        });
+        return c.text("", 200);
+      }
+    }
+    
     // Handle Upload Transcript button - open modal
     if (actionId === "open_upload_transcript_modal") {
       const modal = buildUploadTranscriptModal();
