@@ -94,9 +94,14 @@ model Insight {
   type              InsightType
   category          String?
   
-  // Evidence and validation
+  // Author and Evidence (extracted from transcript)
+  author            String?         // Who mentioned this insight in the transcript
+  evidence_text     String?         @db.Text // Primary quote/fragment from transcript
   evidence_quotes   Json            // Array of { quote: string, timestamp?: string, speaker?: string }
   confidence        Float           // 0.0 to 1.0
+  
+  // Deduplication
+  content_hash      String?         // Hash of normalized content for deduplication
   is_duplicate      Boolean         @default(false)
   duplicate_of_id   String?
   duplicate_similarity Float?
@@ -107,11 +112,11 @@ model Insight {
   speaker           String?
   
   // Status and export
-  status            InsightStatus   @default(generated)
+  status            InsightStatus   @default(new)
   approved          Boolean         @default(false)
   approved_at       DateTime?
   exported          Boolean         @default(false)
-  export_destinations Json?         // Array of { provider: string, id: string, exported_at: string }
+  export_destinations Json?         // Array of { provider: string, id: string, exported_at: string, status: string }
   
   // Timestamps
   created_at        DateTime        @default(now())
@@ -122,6 +127,7 @@ model Insight {
   @@index([status])
   @@index([approved])
   @@index([is_duplicate])
+  @@index([content_hash])
 }
 
 enum InsightType {
@@ -142,10 +148,10 @@ enum InsightType {
 }
 
 enum InsightStatus {
-  generated
-  exported
-  archived
-  failed
+  new           // Not yet exported (default)
+  exported      // Successfully exported to destination
+  export_failed // Export attempt failed
+  archived      // Archived/hidden by user
 }
 
 // Activity log for transcripts
