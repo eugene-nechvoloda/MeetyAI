@@ -853,9 +853,11 @@ export function buildLinearConfigModal(existingConfig?: any) {
 }
 
 /**
- * Build Airtable configuration modal
+ * Build Airtable configuration modal with field mapping
  */
 export function buildAirtableConfigModal(existingConfig?: any) {
+  const fieldMapping = (existingConfig?.field_mapping as any) || {};
+  
   return {
     type: "modal",
     callback_id: "airtable_config_modal",
@@ -951,6 +953,169 @@ export function buildAirtableConfigModal(existingConfig?: any) {
           placeholder: {
             type: "plain_text",
             text: "My Airtable Base",
+          },
+        },
+      },
+      {
+        type: "divider",
+      },
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: "Field Mapping",
+        },
+      },
+      {
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: "Map MeetyAI insight fields to your Airtable column names. Leave blank to use defaults.",
+          },
+        ],
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_title",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Title Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.title || "Title",
+          placeholder: {
+            type: "plain_text",
+            text: "Title",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_description",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Description Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.description || "Description",
+          placeholder: {
+            type: "plain_text",
+            text: "Description",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_type",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Type Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.type || "Type",
+          placeholder: {
+            type: "plain_text",
+            text: "Type",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_confidence",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Confidence Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.confidence || "Confidence",
+          placeholder: {
+            type: "plain_text",
+            text: "Confidence",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_author",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Author Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.author || "Author",
+          placeholder: {
+            type: "plain_text",
+            text: "Author",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_evidence",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Evidence Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.evidence || "Evidence",
+          placeholder: {
+            type: "plain_text",
+            text: "Evidence",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_source",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Source Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.source || "Source",
+          placeholder: {
+            type: "plain_text",
+            text: "Source",
+          },
+        },
+      },
+      {
+        type: "input",
+        block_id: "airtable_field_status",
+        optional: true,
+        label: {
+          type: "plain_text",
+          text: "Status Field",
+        },
+        element: {
+          type: "plain_text_input",
+          action_id: "field_input",
+          initial_value: fieldMapping.status || "Status",
+          placeholder: {
+            type: "plain_text",
+            text: "Status",
           },
         },
       },

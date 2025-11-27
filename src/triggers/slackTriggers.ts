@@ -289,13 +289,13 @@ async function handleInteractivePayload(
           text: `🔄 *Re-analyzing transcript: ${transcript.title}*\n\nThis may take a minute. I'll notify you when the analysis is complete.`,
         });
         
-        // Trigger the workflow to re-analyze
+        // Trigger the workflow to re-analyze using .start() for proper Mastra context
         const { mastra: mastraInstance } = await import("../mastra/index");
         const threadId = `transcript/${transcript.id}`;
         const message = `Re-analyze transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${transcript.transcript_text}`;
         
-        const run = await mastraInstance.getWorkflow("metiyWorkflow").createRunAsync();
-        await run.start({
+        const workflow = mastraInstance.getWorkflow("metiyWorkflow");
+        await workflow.start({
           inputData: {
             message,
             threadId,
@@ -915,6 +915,20 @@ async function handleInteractivePayload(
           const tableName = values?.airtable_table_name?.table_name_input?.value || "Insights";
           const label = values?.airtable_label?.label_input?.value || "My Airtable Base";
           
+          // Extract field mapping values
+          const fieldMapping = {
+            title: values?.airtable_field_title?.field_input?.value || "Title",
+            description: values?.airtable_field_description?.field_input?.value || "Description",
+            type: values?.airtable_field_type?.field_input?.value || "Type",
+            confidence: values?.airtable_field_confidence?.field_input?.value || "Confidence",
+            author: values?.airtable_field_author?.field_input?.value || "Author",
+            evidence: values?.airtable_field_evidence?.field_input?.value || "Evidence",
+            source: values?.airtable_field_source?.field_input?.value || "Source",
+            status: values?.airtable_field_status?.field_input?.value || "Status",
+          };
+          
+          logger?.info("📊 [Slack] Airtable field mapping", { fieldMapping });
+          
           if (!apiKey || !baseId) {
             return c.json({
               response_action: "errors",
@@ -946,6 +960,7 @@ async function handleInteractivePayload(
                 credentials_encrypted: encryptedCredentials,
                 base_id: baseId,
                 table_name: tableName,
+                field_mapping: fieldMapping,
               },
             });
           } else {
@@ -958,16 +973,16 @@ async function handleInteractivePayload(
                 credentials_encrypted: encryptedCredentials,
                 base_id: baseId,
                 table_name: tableName,
-                field_mapping: { title: "Title", description: "Description" },
+                field_mapping: fieldMapping,
               },
             });
           }
           
-          logger?.info("✅ [Slack] Airtable config saved", { userId, baseId });
+          logger?.info("✅ [Slack] Airtable config saved", { userId, baseId, fieldMapping });
           
           await slack.chat.postMessage({
             channel: userId,
-            text: "✅ Airtable has been configured successfully! You can now export insights to Airtable.",
+            text: "✅ Airtable has been configured successfully with field mapping! You can now export insights to Airtable.",
           });
           
           return c.json({ response_action: "clear" });
