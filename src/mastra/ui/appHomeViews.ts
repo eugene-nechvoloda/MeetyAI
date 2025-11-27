@@ -65,16 +65,21 @@ export async function buildHomeTab(userId: string) {
   try {
     const prisma = await getPrismaAsync();
     
-    // Get quick stats
+    // Get quick stats (excluding archived)
     transcriptCount = await prisma.transcript.count({
-      where: { slack_user_id: userId },
+      where: { 
+        slack_user_id: userId,
+        archived: false,
+      },
     });
     
     insightCount = await prisma.insight.count({
       where: { 
         transcript: {
           slack_user_id: userId,
+          archived: false,
         },
+        archived: false,
       },
     });
     
@@ -82,7 +87,9 @@ export async function buildHomeTab(userId: string) {
       where: { 
         transcript: {
           slack_user_id: userId,
+          archived: false,
         },
+        archived: false,
         exported: false,
       },
     });
@@ -371,12 +378,14 @@ export async function buildInsightsTab(userId: string) {
   try {
     const prisma = await getPrismaAsync();
     
-    // Get insights for this user
+    // Get insights for this user (excluding archived)
     const insights = await prisma.insight.findMany({
       where: { 
         transcript: {
           slack_user_id: userId,
+          archived: false,
         },
+        archived: false,
       },
       orderBy: { created_at: "desc" },
       take: 20, // Show last 20

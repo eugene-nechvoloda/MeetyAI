@@ -517,10 +517,14 @@ async function handleInteractivePayload(
           return c.text("", 200);
         }
         
-        // Get unexported insights for this user
+        // Get unexported insights for this user (excluding archived)
         const insights = await prisma.insight.findMany({
           where: {
-            transcript: { slack_user_id: userId },
+            transcript: { 
+              slack_user_id: userId,
+              archived: false,
+            },
+            archived: false,
             exported: false,
           },
           select: { id: true },
@@ -589,10 +593,14 @@ async function handleInteractivePayload(
           return c.text("", 200);
         }
         
-        // Get unexported insights for this user
+        // Get unexported insights for this user (excluding archived)
         const insights = await prisma.insight.findMany({
           where: {
-            transcript: { slack_user_id: userId },
+            transcript: { 
+              slack_user_id: userId,
+              archived: false,
+            },
+            archived: false,
             exported: false,
           },
           select: { id: true },
