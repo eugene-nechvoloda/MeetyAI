@@ -332,6 +332,78 @@ async function handleInteractivePayload(
       }
     }
     
+    // Handle Archive Transcript button
+    if (actionId === "archive_transcript") {
+      const transcriptId = payload.actions?.[0]?.value;
+      logger?.info("🗑️ [Slack] Archive transcript requested", { transcriptId, userId });
+      
+      try {
+        const { getPrismaAsync } = await import("../mastra/utils/database");
+        const prisma = await getPrismaAsync();
+        
+        // Get the transcript
+        const transcript = await prisma.transcript.findUnique({
+          where: { id: transcriptId },
+        });
+        
+        if (!transcript) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "❌ Transcript not found.",
+          });
+          return c.text("", 200);
+        }
+        
+        // Archive the transcript
+        await prisma.transcript.update({
+          where: { id: transcriptId },
+          data: {
+            archived: true,
+            archived_at: new Date(),
+          },
+        });
+        
+        // Archive all related insights
+        await prisma.insight.updateMany({
+          where: { transcript_id: transcriptId },
+          data: {
+            archived: true,
+            archived_at: new Date(),
+          },
+        });
+        
+        // Log the activity
+        await prisma.transcriptActivity.create({
+          data: {
+            transcript_id: transcriptId,
+            activity_type: "archived",
+            message: "Transcript archived by user",
+          },
+        });
+        
+        logger?.info("✅ [Slack] Transcript archived", { transcriptId, title: transcript.title });
+        
+        // Send confirmation DM
+        await slack.chat.postMessage({
+          channel: userId,
+          text: `🗑️ Transcript "*${transcript.title}*" has been archived.\n\nThe transcript and its insights are now hidden from your lists.`,
+        });
+        
+        // Refresh the Transcripts tab
+        const view = await buildTranscriptsTab(userId);
+        await slack.views.publish({ user_id: userId, view: view as any });
+        
+        return c.text("", 200);
+      } catch (error) {
+        logger?.error("❌ [Slack] Archive failed", { error: format(error), transcriptId });
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ Failed to archive transcript. Please try again.",
+        });
+        return c.text("", 200);
+      }
+    }
+    
     // Handle Upload Transcript button - open modal
     if (actionId === "open_upload_transcript_modal") {
       const modal = buildUploadTranscriptModal();
