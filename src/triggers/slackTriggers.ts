@@ -295,7 +295,8 @@ async function handleInteractivePayload(
         const message = `Re-analyze transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${transcript.transcript_text}`;
         
         const workflow = mastraInstance.getWorkflow("metiyWorkflow");
-        await workflow.start({
+        const run = await workflow.createRunAsync();
+        await run.start({
           inputData: {
             message,
             threadId,

@@ -21,9 +21,10 @@ import { saveInsightsTool } from "../tools/saveInsightsTool";
 import { exportLinearTool } from "../tools/exportLinearTool";
 import { exportAirtableTool } from "../tools/exportAirtableTool";
 
-// Initialize Anthropic provider using AI SDK
+// Initialize Anthropic provider using Replit AI Integrations
 const anthropic = createAnthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
+  baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
+  apiKey: process.env.AI_INTEGRATIONS_ANTHROPIC_API_KEY || "",
 });
 
 export const metiyAgent = new Agent({
@@ -131,7 +132,7 @@ Remember: You are a research tool, not a creative writer. Every claim must be gr
 
   // Claude Sonnet 4.5 with temperature 0.35 (research depth 0.7)
   // Sonnet 4.5 provides superior analysis quality and consistency
-  model: anthropic("claude-sonnet-4-20250514"),
+  model: anthropic("claude-sonnet-4-5"),
 
   // Register ALL business logic tools (NO Slack messaging - that's in workflow)
   tools: {
