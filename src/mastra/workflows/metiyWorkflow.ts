@@ -103,6 +103,7 @@ const sendReplyStep = createStep({
   
   inputSchema: z.object({
     response: z.string().describe("Agent response to send"),
+    threadId: z.string().describe("Thread ID for conversation"),
     channel: z.string().describe("Slack channel ID"),
     threadTs: z.string().optional().describe("Thread timestamp for threading"),
   }),

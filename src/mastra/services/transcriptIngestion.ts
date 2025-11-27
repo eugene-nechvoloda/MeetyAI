@@ -112,7 +112,8 @@ export async function ingestTranscript(
           const message = `Process transcript "${existingTranscript.title}" (ID: ${existingTranscript.id}):\n\n${input.content}`;
           
           const workflow = mastra.getWorkflow("metiyWorkflow");
-          await workflow.start({
+          const run = await workflow.createRunAsync();
+          await run.start({
             inputData: {
               message,
               threadId,
@@ -204,9 +205,9 @@ export async function ingestTranscript(
         const threadId = `transcript/${transcript.id}`;
         const message = `Process transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${input.content}`;
         
-        // Use .start() directly instead of createRunAsync() to ensure proper Mastra context
         const workflow = mastra.getWorkflow("metiyWorkflow");
-        await workflow.start({
+        const run = await workflow.createRunAsync();
+        await run.start({
           inputData: {
             message,
             threadId,
