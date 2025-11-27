@@ -363,12 +363,13 @@ async function handleInteractivePayload(
           },
         });
         
-        // Archive all related insights
+        // Archive all related insights (set both archived flag and status)
         await prisma.insight.updateMany({
           where: { transcript_id: transcriptId },
           data: {
             archived: true,
             archived_at: new Date(),
+            status: "archived",
           },
         });
         
