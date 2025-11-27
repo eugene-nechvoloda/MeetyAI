@@ -8,10 +8,21 @@
  * - Fireflies import
  * 
  * After ingestion, triggers the metiyWorkflow for analysis.
+ * 
+ * IMPORTANT: Uses content-based deduplication to prevent duplicate transcripts
+ * when Inngest retries failed requests.
  */
 
 import { getPrismaAsync } from "../utils/database";
 import { TranscriptOrigin, TranscriptStatus } from "@prisma/client";
+import crypto from "crypto";
+
+/**
+ * Generate a SHA-256 hash of the content for deduplication
+ */
+function generateContentHash(content: string): string {
+  return crypto.createHash("sha256").update(content).digest("hex").substring(0, 32);
+}
 
 let mastraInstance: any = null;
 
@@ -57,15 +68,85 @@ export async function ingestTranscript(
   input: TranscriptInput,
   logger?: any
 ): Promise<IngestionResult> {
+  const contentHash = generateContentHash(input.content);
+  
   logger?.info("📥 [TranscriptIngestion] Starting ingestion", {
     title: input.title,
     origin: input.origin,
     contentLength: input.content?.length || 0,
     slackUserId: input.slackUserId,
+    contentHash,
   });
 
   try {
     const prisma = await getPrismaAsync();
+
+    // Check for existing transcript with the same content hash for this user
+    // This prevents duplicate transcripts when Inngest retries failed requests
+    const existingTranscript = await prisma.transcript.findFirst({
+      where: {
+        slack_user_id: input.slackUserId,
+        content_hash: contentHash,
+        archived: false,
+      },
+    });
+
+    if (existingTranscript) {
+      logger?.info("⏭️ [TranscriptIngestion] Duplicate transcript detected, checking workflow status", {
+        existingTranscriptId: existingTranscript.id,
+        title: existingTranscript.title,
+        status: existingTranscript.status,
+        contentHash,
+      });
+
+      // Check if the workflow needs to be triggered (status still file_uploaded means it never started)
+      let workflowStarted = false;
+      if (existingTranscript.status === TranscriptStatus.file_uploaded && !input.skipWorkflow) {
+        try {
+          logger?.info("🔄 [TranscriptIngestion] Existing transcript needs workflow, triggering", {
+            transcriptId: existingTranscript.id,
+          });
+
+          const mastra = await getMastraLazy();
+          const threadId = `transcript/${existingTranscript.id}`;
+          const message = `Process transcript "${existingTranscript.title}" (ID: ${existingTranscript.id}):\n\n${input.content}`;
+          
+          const workflow = mastra.getWorkflow("metiyWorkflow");
+          await workflow.start({
+            inputData: {
+              message,
+              threadId,
+              slackUserId: input.slackUserId,
+              slackChannel: input.slackChannelId || input.slackUserId,
+              threadTs: undefined,
+              transcriptId: existingTranscript.id,
+            },
+          });
+
+          workflowStarted = true;
+          logger?.info("✅ [TranscriptIngestion] Workflow triggered for existing transcript", {
+            transcriptId: existingTranscript.id,
+            threadId,
+          });
+        } catch (workflowError) {
+          logger?.error("⚠️ [TranscriptIngestion] Failed to start workflow for existing transcript", {
+            error: String(workflowError),
+            transcriptId: existingTranscript.id,
+          });
+        }
+      } else {
+        logger?.info("⏭️ [TranscriptIngestion] Existing transcript already processing or completed", {
+          transcriptId: existingTranscript.id,
+          status: existingTranscript.status,
+        });
+      }
+
+      return {
+        success: true,
+        transcriptId: existingTranscript.id,
+        workflowStarted,
+      };
+    }
 
     const transcript = await prisma.transcript.create({
       data: {
@@ -76,6 +157,7 @@ export async function ingestTranscript(
         slack_channel_id: input.slackChannelId || "app_home",
         raw_content: input.content,
         transcript_text: input.content,
+        content_hash: contentHash,
         language: input.metadata?.language || "en",
         file_name: input.metadata?.fileName,
         file_type: input.metadata?.fileType,
@@ -91,6 +173,7 @@ export async function ingestTranscript(
       transcriptId: transcript.id,
       title: transcript.title,
       origin: transcript.origin,
+      contentHash,
     });
 
     await prisma.transcriptActivity.create({

@@ -26,6 +26,7 @@ model Transcript {
   // Content
   raw_content       String?             @db.Text
   transcript_text   String?             @db.Text
+  content_hash      String?             // SHA-256 hash of content for deduplication
   language          String              @default("en")
   translated        Boolean             @default(false)
   
@@ -62,6 +63,8 @@ model Transcript {
   @@index([status])
   @@index([origin])
   @@index([created_at])
+  @@index([content_hash])
+  @@index([slack_user_id, content_hash, archived])
   @@index([archived])
 }
 
