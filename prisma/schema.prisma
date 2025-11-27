@@ -50,6 +50,10 @@ model Transcript {
   updated_at        DateTime            @updatedAt
   processed_at      DateTime?
   
+  // Archive (soft delete)
+  archived          Boolean             @default(false)
+  archived_at       DateTime?
+  
   // Relations
   insights          Insight[]
   activities        TranscriptActivity[]
@@ -58,6 +62,7 @@ model Transcript {
   @@index([status])
   @@index([origin])
   @@index([created_at])
+  @@index([archived])
 }
 
 enum TranscriptOrigin {
@@ -118,6 +123,10 @@ model Insight {
   exported          Boolean         @default(false)
   export_destinations Json?         // Array of { provider: string, id: string, exported_at: string, status: string }
   
+  // Archive (soft delete - cascade from transcript)
+  archived          Boolean         @default(false)
+  archived_at       DateTime?
+  
   // Timestamps
   created_at        DateTime        @default(now())
   updated_at        DateTime        @updatedAt
@@ -128,6 +137,7 @@ model Insight {
   @@index([approved])
   @@index([is_duplicate])
   @@index([content_hash])
+  @@index([archived])
 }
 
 enum InsightType {
