@@ -31,6 +31,8 @@ const insightSchema = z.object({
   title: z.string().min(10).max(70),
   description: z.string().max(200),
   type: z.enum(["pain", "blocker", "feature_request", "idea", "gain", "outcome", "objection", "buying_signal", "question", "feedback", "confusion", "opportunity", "insight", "other"]),
+  author: z.string().optional().describe("Who mentioned/said this insight in the transcript"),
+  evidence_text: z.string().optional().describe("Primary verbatim quote from transcript that supports this insight"),
   evidence: z.array(evidenceQuoteSchema).min(1),
   confidence: z.number().min(0).max(1),
   timestamp_start: z.string().optional(),
@@ -315,9 +317,13 @@ Analyze the following transcript and extract insights related to: ${pass.focus}
 For each insight:
 1. Create a clear title (50-70 characters)
 2. Write a concise description (max 200 characters)
-3. Provide verbatim quotes as evidence (with timestamps if available)
-4. Assign confidence score (0.0-1.0) based on clarity and repetition
-5. Categorize as one of: ${pass.types.join(", ")}
+3. AUTHOR: Identify WHO mentioned/said this insight (speaker name from transcript)
+4. EVIDENCE_TEXT: Extract the PRIMARY verbatim quote (max 500 chars) that best supports this insight
+5. Provide additional verbatim quotes as evidence (with timestamps if available)
+6. Assign confidence score (0.0-1.0) based on clarity and repetition
+7. Categorize as one of: ${pass.types.join(", ")}
+
+IMPORTANT: author and evidence_text are REQUIRED fields. Always extract the speaker who mentioned the insight and the most important verbatim quote.
 
 Extract at least 10 insights if the transcript supports it. Quality over quantity.
 
@@ -342,9 +348,11 @@ Respond with a JSON array of insights in this exact format:
     "title": "Clear insight title 50-70 chars",
     "description": "Brief description under 200 chars",
     "type": "pain|blocker|confusion|question|feature_request|idea|gain|outcome|opportunity|objection|buying_signal|insight|feedback",
+    "author": "Name of the person who mentioned this insight",
+    "evidence_text": "Primary verbatim quote (max 500 chars) that best supports this insight",
     "evidence": [
       {
-        "quote": "Exact verbatim quote from transcript",
+        "quote": "Additional verbatim quote from transcript",
         "timestamp": "00:15:30",
         "speaker": "Speaker name if available"
       }
