@@ -5,8 +5,6 @@
  * to enable proper field mapping in the UI.
  */
 
-import Airtable from "airtable";
-import { LinearClient } from "@linear/sdk";
 import { getPrismaAsync } from "../utils/database";
 import { decrypt } from "../utils/encryption";
 
@@ -51,12 +49,14 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
     }
     
     const credentials = JSON.parse(decrypt(config.credentials_encrypted));
-    const baseId = credentials.base_id || config.team_id;
-    const tableName = credentials.table_name || "Insights";
+    const baseId = credentials.base_id || config.base_id;
+    const tableName = config.table_name || credentials.table_name || "Insights";
     
     if (!credentials.api_key || !baseId) {
       return { success: false, fields: [], error: "Missing API key or Base ID" };
     }
+    
+    console.log("[FieldFetcher] Fetching Airtable fields", { baseId, tableName });
     
     const response = await fetch(
       `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
@@ -69,7 +69,7 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[FieldFetcher] Airtable API error:", errorText);
+      console.error("[FieldFetcher] Airtable API error:", response.status, errorText);
       return { 
         success: false, 
         fields: [], 
@@ -77,18 +77,25 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
       };
     }
     
-    const data = await response.json() as { tables: Array<{ name: string; fields: Array<{ id: string; name: string; type: string }> }> };
+    const data = await response.json() as { tables: Array<{ id: string; name: string; fields: Array<{ id: string; name: string; type: string }> }> };
+    
+    console.log("[FieldFetcher] Found tables:", data.tables?.map(t => t.name));
+    
     const table = data.tables?.find(t => 
-      t.name.toLowerCase() === tableName.toLowerCase()
+      t.name.toLowerCase() === tableName.toLowerCase() ||
+      t.id === tableName
     );
     
     if (!table) {
+      const availableTables = data.tables?.map(t => t.name).join(", ") || "none";
       return { 
         success: false, 
         fields: [], 
-        error: `Table "${tableName}" not found in base` 
+        error: `Table "${tableName}" not found. Available tables: ${availableTables}` 
       };
     }
+    
+    console.log("[FieldFetcher] Found table fields:", table.fields?.map(f => f.name));
     
     const fields: AppField[] = table.fields.map(f => ({
       id: f.id,

@@ -1113,13 +1113,24 @@ async function handleInteractivePayload(
           const { getMeetyFields } = await import("../mastra/services/fieldFetcher");
           const prisma = await getPrismaAsync();
           
+          const existingConfig = await prisma.exportConfig.findUnique({
+            where: { id: configId },
+          });
+          
+          const existingMapping = (existingConfig?.field_mapping as Record<string, string>) || {};
           const meetyFields = getMeetyFields();
-          const newMapping: Record<string, string> = {};
+          const newMapping: Record<string, string> = { ...existingMapping };
           
           for (const field of meetyFields) {
-            const blockValue = values?.[`mapping_${field.id}`]?.[`select_${field.id}`]?.selected_option?.value;
-            if (blockValue && blockValue !== "__none__") {
-              newMapping[field.id] = blockValue;
+            const selectedOption = values?.[`mapping_${field.id}`]?.[`select_${field.id}`]?.selected_option;
+            
+            if (selectedOption) {
+              const selectedValue = selectedOption.value;
+              if (selectedValue === "__none__") {
+                delete newMapping[field.id];
+              } else if (selectedValue) {
+                newMapping[field.id] = selectedValue;
+              }
             }
           }
           
