@@ -486,7 +486,7 @@ async function handleInteractivePayload(
     }
     
     // Handle Edit Field Mapping button for specific connection
-    if (actionId.startsWith("edit_mapping_")) {
+    if (actionId?.startsWith("edit_mapping_")) {
       const configId = actionId.replace("edit_mapping_", "");
       logger?.info("📋 [Slack] Opening field mapping for config", { configId });
       
