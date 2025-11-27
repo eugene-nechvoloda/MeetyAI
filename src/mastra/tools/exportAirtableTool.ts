@@ -123,13 +123,28 @@ export const exportAirtableTool = createTool({
           // Map title field
           recordData[fieldMapping.title || "Title"] = insight.title;
           
-          // Map description field with evidence
-          const descriptionContent = `${insight.description}\n\nEvidence:\n${JSON.stringify(insight.evidence_quotes, null, 2)}\n\nConfidence: ${insight.confidence}\nSource: ${insight.transcript.title}`;
-          recordData[fieldMapping.description || "Description"] = descriptionContent;
+          // Map description field
+          recordData[fieldMapping.description || "Description"] = insight.description;
+          
+          // Add author if available
+          if (insight.author || insight.speaker) {
+            recordData[fieldMapping.author || "Author"] = insight.author || insight.speaker;
+          }
+          
+          // Add evidence text (the primary quote)
+          if (insight.evidence_text) {
+            recordData[fieldMapping.evidence || "Evidence"] = insight.evidence_text;
+          } else if (insight.evidence_quotes && Array.isArray(insight.evidence_quotes)) {
+            const firstQuote = (insight.evidence_quotes as any[])[0];
+            if (firstQuote?.quote) {
+              recordData[fieldMapping.evidence || "Evidence"] = firstQuote.quote;
+            }
+          }
           
           // Add additional standard fields if they exist
           if (fieldMapping.type) recordData[fieldMapping.type] = insight.type;
           if (fieldMapping.confidence) recordData[fieldMapping.confidence] = insight.confidence;
+          if (fieldMapping.source) recordData[fieldMapping.source] = insight.transcript.title;
           if (fieldMapping.status) recordData[fieldMapping.status] = "New";
           
           logger.info("Creating Airtable record with mapped fields", {
@@ -147,23 +162,52 @@ export const exportAirtableTool = createTool({
           const recordId = records[0].id;
           airtableRecordIds.push(recordId);
           
-          // Update insight as exported
+          // Update insight as exported with status
           await prisma.insight.update({
             where: { id: insight.id },
             data: {
               exported: true,
+              status: "exported",
               export_destinations: {
                 provider: "airtable",
                 id: recordId,
                 exported_at: new Date().toISOString(),
+                status: "success",
               } as any,
             },
+          });
+          
+          logger.info("✅ Successfully exported insight", {
+            insightId: insight.id,
+            recordId,
           });
         } catch (exportError) {
           logger.error("Failed to export insight", {
             insightId: insight.id,
             error: exportError instanceof Error ? exportError.message : "Unknown",
           });
+          
+          // Mark as export_failed
+          try {
+            await prisma.insight.update({
+              where: { id: insight.id },
+              data: {
+                status: "export_failed",
+                export_destinations: {
+                  provider: "airtable",
+                  error: exportError instanceof Error ? exportError.message : "Unknown error",
+                  attempted_at: new Date().toISOString(),
+                  status: "failed",
+                } as any,
+              },
+            });
+          } catch (updateError) {
+            logger.error("Failed to update insight status", {
+              insightId: insight.id,
+              error: updateError instanceof Error ? updateError.message : "Unknown",
+            });
+          }
+          
           failedCount++;
         }
       }
