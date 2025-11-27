@@ -160,6 +160,22 @@ export const saveInsightsTool = createTool({
         failed: failedCount,
       });
       
+      // Update transcript status to completed
+      try {
+        await prisma.transcript.update({
+          where: { id: transcriptId },
+          data: {
+            status: "completed" as any,
+            processed_at: new Date(),
+          },
+        });
+        logger.info("✅ Transcript status updated to completed");
+      } catch (statusError) {
+        logger.warn("⚠️ Failed to update transcript status to completed", {
+          error: statusError instanceof Error ? statusError.message : "Unknown",
+        });
+      }
+      
       // Send notification to user
       try {
         const { getClient } = await import("../../triggers/slackTriggers");

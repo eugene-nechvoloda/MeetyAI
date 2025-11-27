@@ -745,6 +745,20 @@ async function handleInteractivePayload(
               text: `✅ Transcript "${title}" uploaded successfully!\n\nYour transcript is being processed. You'll find the insights in the *Insights* tab once the analysis is complete.`,
             });
             
+            try {
+              const { buildTranscriptsTab } = await import("../mastra/ui/appHomeViews");
+              const transcriptsView = await buildTranscriptsTab(userId);
+              await slack.views.publish({
+                user_id: userId,
+                view: transcriptsView as any,
+              });
+              logger?.info("✅ [Slack] App Home refreshed after upload");
+            } catch (refreshError) {
+              logger?.warn("⚠️ [Slack] Failed to refresh App Home after upload", {
+                error: format(refreshError),
+              });
+            }
+            
             return c.json({ response_action: "clear" });
           } else {
             logger?.error("❌ [Slack] Ingestion failed", { error: result.error });

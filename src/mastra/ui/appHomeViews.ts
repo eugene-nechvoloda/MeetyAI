@@ -237,20 +237,81 @@ export async function buildTranscriptsTab(userId: string) {
           // Ignore count error
         }
         
+        // Determine status indicator based on transcript.status
+        const status = transcript.status;
+        let statusIndicator = "";
+        let isProcessing = false;
+        
+        if (status === "completed") {
+          statusIndicator = "✅ Processed";
+        } else if (status === "failed") {
+          statusIndicator = "❌ Failed";
+        } else if (status === "file_uploaded") {
+          // Just uploaded, workflow may not have started yet
+          statusIndicator = "⏳ Pending...";
+          isProcessing = true;
+        } else if (status === "transcribing") {
+          statusIndicator = "🎙️ Transcribing...";
+          isProcessing = true;
+        } else if (status === "translating") {
+          statusIndicator = "🌐 Translating...";
+          isProcessing = true;
+        } else if (status === "analyzing_pass_1") {
+          statusIndicator = "🔍 Analyzing (1/4)...";
+          isProcessing = true;
+        } else if (status === "analyzing_pass_2") {
+          statusIndicator = "🔍 Analyzing (2/4)...";
+          isProcessing = true;
+        } else if (status === "analyzing_pass_3") {
+          statusIndicator = "🔍 Analyzing (3/4)...";
+          isProcessing = true;
+        } else if (status === "analyzing_pass_4") {
+          statusIndicator = "🔍 Analyzing (4/4)...";
+          isProcessing = true;
+        } else if (status === "compiling_insights") {
+          statusIndicator = "📋 Compiling insights...";
+          isProcessing = true;
+        } else {
+          // Any other status - show as processing
+          statusIndicator = "⏳ Processing...";
+          isProcessing = true;
+        }
+        
+        // Build status line - show insights count only if completed or has insights
+        let infoLine = `📅 ${date}`;
+        if (status === "completed" || insightCount > 0) {
+          infoLine += ` • 💡 ${insightCount} insights`;
+          if (insightCount === 0) {
+            infoLine += " ⚠️";
+          }
+        }
+        infoLine += ` • ${statusIndicator}`;
+        
         // Transcript info section
         blocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${transcript.title}*\n📅 ${date} • 💡 ${insightCount} insights${insightCount === 0 ? " ⚠️" : ""}`,
+            text: `*${transcript.title}*\n${infoLine}`,
           },
         });
         
         // Action buttons for this transcript
         const actionButtons: any[] = [];
         
-        // If no insights, show "Re-analyze" button; otherwise show "View Insights"
-        if (insightCount === 0) {
+        // Don't show action buttons while processing (except archive)
+        if (isProcessing) {
+          // Show disabled-looking context for processing state
+          blocks.push({
+            type: "context",
+            elements: [
+              {
+                type: "mrkdwn",
+                text: "_Analysis in progress. This may take 1-2 minutes..._",
+              },
+            ],
+          });
+        } else if (insightCount === 0) {
           actionButtons.push({
             type: "button",
             text: {
@@ -273,39 +334,44 @@ export async function buildTranscriptsTab(userId: string) {
           });
         }
         
-        // Archive button
-        actionButtons.push({
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: "🗑️ Archive",
-          },
-          action_id: "archive_transcript",
-          value: transcript.id,
-          confirm: {
-            title: {
-              type: "plain_text",
-              text: "Archive Transcript",
-            },
+        // Archive button - always add unless processing
+        if (!isProcessing) {
+          actionButtons.push({
+            type: "button",
             text: {
-              type: "mrkdwn",
-              text: `Are you sure you want to archive "*${transcript.title}*"?\n\nThis will hide the transcript and its insights from your lists. You can contact support to restore it if needed.`,
+              type: "plain_text",
+              text: "🗑️ Archive",
             },
+            action_id: "archive_transcript",
+            value: transcript.id,
             confirm: {
-              type: "plain_text",
-              text: "Archive",
+              title: {
+                type: "plain_text",
+                text: "Archive Transcript",
+              },
+              text: {
+                type: "mrkdwn",
+                text: `Are you sure you want to archive "*${transcript.title}*"?\n\nThis will hide the transcript and its insights from your lists. You can contact support to restore it if needed.`,
+              },
+              confirm: {
+                type: "plain_text",
+                text: "Archive",
+              },
+              deny: {
+                type: "plain_text",
+                text: "Cancel",
+              },
             },
-            deny: {
-              type: "plain_text",
-              text: "Cancel",
-            },
-          },
-        });
+          });
+        }
         
-        blocks.push({
-          type: "actions",
-          elements: actionButtons,
-        });
+        // Only add actions block if we have buttons
+        if (actionButtons.length > 0) {
+          blocks.push({
+            type: "actions",
+            elements: actionButtons,
+          });
+        }
         
         blocks.push({
           type: "divider",

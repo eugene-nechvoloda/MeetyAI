@@ -303,6 +303,23 @@ You will analyze transcripts and extract insights with evidence.`;
       
       // Execute each pass
       for (const pass of passes) {
+        // Update transcript status to show current pass
+        const passStatusMap: Record<number, string> = {
+          1: "analyzing_pass_1",
+          2: "analyzing_pass_2",
+          3: "analyzing_pass_3",
+          4: "analyzing_pass_4",
+        };
+        
+        try {
+          await prisma.transcript.update({
+            where: { id: transcriptId },
+            data: { status: passStatusMap[pass.number] as any },
+          });
+        } catch (statusError) {
+          logger.warn(`Failed to update status for pass ${pass.number}`, { error: String(statusError) });
+        }
+        
         logger.analysis(pass.number, { focus: pass.focus });
         
         const passPrompt = `${antiHallucinationPrompt}
@@ -397,6 +414,16 @@ ${transcriptText}`;
           });
           // Continue with other passes
         }
+      }
+      
+      // Update status to compiling
+      try {
+        await prisma.transcript.update({
+          where: { id: transcriptId },
+          data: { status: "compiling_insights" as any },
+        });
+      } catch (statusError) {
+        logger.warn("Failed to update status to compiling_insights", { error: String(statusError) });
       }
       
       // Flag duplicates using cosine similarity on titles and descriptions
