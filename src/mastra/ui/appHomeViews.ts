@@ -345,6 +345,24 @@ export async function buildInsightsTab(userId: string) {
       },
     });
     
+    // Count insights by status for summary
+    const newCount = insights.filter((i: { status: string }) => i.status === "new").length;
+    const exportedCount = insights.filter((i: { status: string }) => i.status === "exported").length;
+    const failedCount = insights.filter((i: { status: string }) => i.status === "export_failed").length;
+    
+    // Add summary stats
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `📊 *${insights.length} insights* | 🆕 ${newCount} New | ✅ ${exportedCount} Exported${failedCount > 0 ? ` | ❌ ${failedCount} Failed` : ""}`,
+        },
+      ],
+    });
+    
+    blocks.push({ type: "divider" });
+    
     if (insights.length === 0) {
       blocks.push({
         type: "section",
@@ -355,7 +373,16 @@ export async function buildInsightsTab(userId: string) {
       });
     } else {
       for (const insight of insights) {
-        const statusBadge = insight.exported ? "✅ Exported" : "🆕 New";
+        // Status badge based on new status enum
+        let statusBadge = "🆕 New";
+        if (insight.status === "exported") {
+          statusBadge = "✅ Exported";
+        } else if (insight.status === "export_failed") {
+          statusBadge = "❌ Failed";
+        } else if (insight.status === "archived") {
+          statusBadge = "📦 Archived";
+        }
+        
         const typeEmoji: Record<string, string> = {
           pain: "😣",
           blocker: "🚫",
@@ -373,11 +400,18 @@ export async function buildInsightsTab(userId: string) {
         };
         const emoji = typeEmoji[insight.type] || "📝";
         
+        // Build the main text with author if available
+        let mainText = `${emoji} *${insight.title}*\n${insight.description}`;
+        if (insight.author) {
+          mainText += `\n👤 _${insight.author}_`;
+        }
+        mainText += `\n\n${statusBadge} • Confidence: ${(insight.confidence * 100).toFixed(0)}% • Source: ${insight.transcript.title}`;
+        
         blocks.push({
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `${emoji} *${insight.title}*\n${insight.description}\n\n_${statusBadge} • Confidence: ${(insight.confidence * 100).toFixed(0)}% • Source: ${insight.transcript.title}_`,
+            text: mainText,
           },
           accessory: insight.exported ? undefined : {
             type: "button",
