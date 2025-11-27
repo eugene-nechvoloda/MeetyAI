@@ -668,6 +668,17 @@ export async function buildExportSettingsModal(userId: string) {
           action_id: "configure_linear",
         },
       },
+      ...(linearConfig?.enabled ? [{
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "📋 Edit Field Mapping" },
+            action_id: `edit_mapping_${linearConfig.id}`,
+            value: linearConfig.id,
+          },
+        ],
+      }] : []),
       {
         type: "section",
         text: {
@@ -683,6 +694,17 @@ export async function buildExportSettingsModal(userId: string) {
           action_id: "configure_airtable",
         },
       },
+      ...(airtableConfig?.enabled ? [{
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "📋 Edit Field Mapping" },
+            action_id: `edit_mapping_${airtableConfig.id}`,
+            value: airtableConfig.id,
+          },
+        ],
+      }] : []),
       {
         type: "divider",
       },
@@ -740,24 +762,6 @@ export async function buildExportSettingsModal(userId: string) {
             text: "POST JSON with: `{ \"title\": \"...\", \"content\": \"...\" }`",
           },
         ],
-      },
-      {
-        type: "divider",
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "*Field Mapping*\nCustomize how MeetyAI fields map to your export destinations",
-        },
-        accessory: {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: "Configure",
-          },
-          action_id: "configure_field_mapping",
-        },
       },
     ],
   };
@@ -1216,163 +1220,141 @@ export function buildZoomConfigModal(existingConfig?: any) {
 }
 
 /**
- * Build Field Mapping configuration modal
+ * Build per-connection Field Mapping modal with 2-column layout
+ * Left column: Meety fields, Right column: Dropdown with actual app fields
  */
-export async function buildFieldMappingModal(userId: string) {
+export async function buildConnectionFieldMappingModal(configId: string) {
   const prisma = await getPrismaAsync();
   
-  const exportConfigs = await prisma.exportConfig.findMany({
-    where: { user_id: userId },
+  const config = await prisma.exportConfig.findUnique({
+    where: { id: configId },
   });
+  
+  if (!config) {
+    return {
+      type: "modal",
+      title: { type: "plain_text", text: "Error" },
+      close: { type: "plain_text", text: "Close" },
+      blocks: [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: "Configuration not found." },
+        },
+      ],
+    };
+  }
+  
+  const { getMeetyFields, fetchFieldsForConfig } = await import("../services/fieldFetcher");
+  const meetyFields = getMeetyFields();
+  const appFieldsResult = await fetchFieldsForConfig(configId, config.provider);
+  const currentMapping = (config.field_mapping as any) || {};
+  
+  const providerName = config.provider === "airtable" ? "Airtable" : 
+                       config.provider === "linear" ? "Linear" : config.provider;
   
   const blocks: any[] = [
     {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "*Configure how MeetyAI insight fields map to your export destinations.*",
+        text: `*Map Meety fields to ${providerName} fields*\n_${config.label}_`,
       },
-    },
-    {
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: "MeetyAI Fields: Title, Description, Type, Confidence, Evidence, Source",
-        },
-      ],
     },
     {
       type: "divider",
     },
   ];
   
-  // Add field mapping for each configured export
-  for (const config of exportConfigs) {
-    if (config.provider === "linear") {
-      const mapping = (config.field_mapping as any) || {};
-      blocks.push(
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*Linear* (${config.label})`,
-          },
-        },
-        {
-          type: "input",
-          block_id: `linear_title_field_${config.id}`,
-          label: {
-            type: "plain_text",
-            text: "Title maps to",
-          },
-          element: {
-            type: "plain_text_input",
-            action_id: "field_input",
-            initial_value: mapping.title || "title",
-            placeholder: { type: "plain_text", text: "title" },
-          },
-        },
-        {
-          type: "input",
-          block_id: `linear_description_field_${config.id}`,
-          label: {
-            type: "plain_text",
-            text: "Description maps to",
-          },
-          element: {
-            type: "plain_text_input",
-            action_id: "field_input",
-            initial_value: mapping.description || "description",
-            placeholder: { type: "plain_text", text: "description" },
-          },
-        },
-        { type: "divider" }
-      );
-    }
-    
-    if (config.provider === "airtable") {
-      const mapping = (config.field_mapping as any) || {};
-      blocks.push(
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*Airtable* (${config.label})`,
-          },
-        },
-        {
-          type: "input",
-          block_id: `airtable_title_field_${config.id}`,
-          label: {
-            type: "plain_text",
-            text: "Title maps to",
-          },
-          element: {
-            type: "plain_text_input",
-            action_id: "field_input",
-            initial_value: mapping.title || "Title",
-            placeholder: { type: "plain_text", text: "Title" },
-          },
-        },
-        {
-          type: "input",
-          block_id: `airtable_description_field_${config.id}`,
-          label: {
-            type: "plain_text",
-            text: "Description maps to",
-          },
-          element: {
-            type: "plain_text_input",
-            action_id: "field_input",
-            initial_value: mapping.description || "Description",
-            placeholder: { type: "plain_text", text: "Description" },
-          },
-        },
-        {
-          type: "input",
-          block_id: `airtable_type_field_${config.id}`,
-          optional: true,
-          label: {
-            type: "plain_text",
-            text: "Type maps to (optional)",
-          },
-          element: {
-            type: "plain_text_input",
-            action_id: "field_input",
-            initial_value: mapping.type || "",
-            placeholder: { type: "plain_text", text: "Type" },
-          },
-        },
-        { type: "divider" }
-      );
-    }
-  }
-  
-  if (exportConfigs.length === 0) {
+  if (!appFieldsResult.success || appFieldsResult.fields.length === 0) {
     blocks.push({
       type: "section",
       text: {
         type: "mrkdwn",
-        text: "_No export destinations configured yet. Configure Linear or Airtable first._",
+        text: appFieldsResult.error 
+          ? `⚠️ Could not fetch fields: ${appFieldsResult.error}`
+          : "⚠️ No fields found. Please check your connection settings.",
+      },
+    });
+    
+    return {
+      type: "modal",
+      callback_id: `field_mapping_${configId}`,
+      title: { type: "plain_text", text: "Field Mapping" },
+      close: { type: "plain_text", text: "Close" },
+      blocks,
+    };
+  }
+  
+  const appFields = appFieldsResult.fields;
+  
+  blocks.push({
+    type: "context",
+    elements: [
+      {
+        type: "mrkdwn",
+        text: `Found ${appFields.length} fields in your ${providerName} table`,
+      },
+    ],
+  });
+  
+  const noneOption = { text: { type: "plain_text" as const, text: "(Don't map)" }, value: "__none__" };
+  const fieldOptions = appFields.map(f => ({
+    text: { type: "plain_text" as const, text: f.name },
+    value: f.name,
+  }));
+  
+  for (const meetyField of meetyFields) {
+    const currentValue = currentMapping[meetyField.id];
+    const isRequired = meetyField.required;
+    
+    const options = isRequired ? fieldOptions : [noneOption, ...fieldOptions];
+    
+    let initialOption = options.find(o => o.value === currentValue);
+    if (!initialOption && !isRequired) {
+      initialOption = noneOption;
+    } else if (!initialOption && fieldOptions.length > 0) {
+      const defaultMatch = fieldOptions.find(o => 
+        o.value.toLowerCase() === meetyField.name.toLowerCase() ||
+        o.value.toLowerCase().includes(meetyField.id.toLowerCase())
+      );
+      initialOption = defaultMatch || fieldOptions[0];
+    }
+    
+    blocks.push({
+      type: "section",
+      block_id: `mapping_${meetyField.id}`,
+      text: {
+        type: "mrkdwn",
+        text: `*${meetyField.name}*${isRequired ? " _(required)_" : ""}`,
+      },
+      accessory: {
+        type: "static_select",
+        action_id: `select_${meetyField.id}`,
+        placeholder: {
+          type: "plain_text",
+          text: "Select field...",
+        },
+        options,
+        ...(initialOption ? { initial_option: initialOption } : {}),
       },
     });
   }
   
   return {
     type: "modal",
-    callback_id: "field_mapping_modal",
+    callback_id: `field_mapping_${configId}`,
+    private_metadata: JSON.stringify({ configId, provider: config.provider }),
     title: {
       type: "plain_text",
       text: "Field Mapping",
     },
-    submit: exportConfigs.length > 0 ? {
+    submit: {
       type: "plain_text",
-      text: "Save",
-    } : undefined,
+      text: "Save Mapping",
+    },
     close: {
       type: "plain_text",
-      text: exportConfigs.length > 0 ? "Cancel" : "Close",
+      text: "Cancel",
     },
     blocks,
   };

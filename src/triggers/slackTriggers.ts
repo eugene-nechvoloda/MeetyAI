@@ -485,15 +485,18 @@ async function handleInteractivePayload(
       return c.text("", 200);
     }
     
-    // Handle Configure Field Mapping button (from Settings hub)
-    if (actionId === "configure_field_mapping") {
-      const { buildFieldMappingModal } = await import("../mastra/ui/appHomeViews");
-      const modal = await buildFieldMappingModal(userId);
+    // Handle Edit Field Mapping button for specific connection
+    if (actionId.startsWith("edit_mapping_")) {
+      const configId = actionId.replace("edit_mapping_", "");
+      logger?.info("📋 [Slack] Opening field mapping for config", { configId });
+      
+      const { buildConnectionFieldMappingModal } = await import("../mastra/ui/appHomeViews");
+      const modal = await buildConnectionFieldMappingModal(configId);
       await slack.views.push({
         trigger_id: payload.trigger_id,
         view: modal as any,
       });
-      logger?.info("✅ [Slack] Opened field mapping modal");
+      logger?.info("✅ [Slack] Opened per-connection field mapping modal");
       return c.text("", 200);
     }
     
@@ -1085,57 +1088,56 @@ async function handleInteractivePayload(
         }
       }
       
-      // Handle Field Mapping modal submission
-      if (callbackId === "field_mapping_modal") {
+      // Handle per-connection Field Mapping modal submission (new 2-column format)
+      if (callbackId.startsWith("field_mapping_")) {
+        const privateMetadata = payload.view?.private_metadata;
+        let configId: string | null = null;
+        
+        try {
+          const metadata = JSON.parse(privateMetadata || "{}");
+          configId = metadata.configId;
+        } catch {
+          configId = callbackId.replace("field_mapping_", "");
+        }
+        
+        if (!configId) {
+          logger?.error("❌ [Slack] No configId in field mapping submission");
+          return c.json({ response_action: "clear" });
+        }
+        
         const values = payload.view?.state?.values;
-        logger?.info("🔧 [Slack] Field mapping submission", { values });
+        logger?.info("🔧 [Slack] Per-connection field mapping submission", { configId, values });
         
         try {
           const { getPrismaAsync } = await import("../mastra/utils/database");
+          const { getMeetyFields } = await import("../mastra/services/fieldFetcher");
           const prisma = await getPrismaAsync();
           
-          // Get all configs and update their field mappings
-          const configs = await prisma.exportConfig.findMany({
-            where: { user_id: userId },
-          });
+          const meetyFields = getMeetyFields();
+          const newMapping: Record<string, string> = {};
           
-          for (const config of configs) {
-            const newMapping: Record<string, string> = {};
-            
-            if (config.provider === "linear") {
-              const titleField = values?.[`linear_title_field_${config.id}`]?.field_input?.value;
-              const descField = values?.[`linear_description_field_${config.id}`]?.field_input?.value;
-              if (titleField) newMapping.title = titleField;
-              if (descField) newMapping.description = descField;
-            }
-            
-            if (config.provider === "airtable") {
-              const titleField = values?.[`airtable_title_field_${config.id}`]?.field_input?.value;
-              const descField = values?.[`airtable_description_field_${config.id}`]?.field_input?.value;
-              const typeField = values?.[`airtable_type_field_${config.id}`]?.field_input?.value;
-              if (titleField) newMapping.title = titleField;
-              if (descField) newMapping.description = descField;
-              if (typeField) newMapping.type = typeField;
-            }
-            
-            if (Object.keys(newMapping).length > 0) {
-              await prisma.exportConfig.update({
-                where: { id: config.id },
-                data: { field_mapping: newMapping },
-              });
+          for (const field of meetyFields) {
+            const blockValue = values?.[`mapping_${field.id}`]?.[`select_${field.id}`]?.selected_option?.value;
+            if (blockValue && blockValue !== "__none__") {
+              newMapping[field.id] = blockValue;
             }
           }
           
-          logger?.info("✅ [Slack] Field mappings saved", { userId });
+          await prisma.exportConfig.update({
+            where: { id: configId },
+            data: { field_mapping: newMapping },
+          });
+          
+          logger?.info("✅ [Slack] Per-connection field mapping saved", { configId, newMapping });
           
           await slack.chat.postMessage({
             channel: userId,
-            text: "✅ Field mappings have been updated!",
+            text: "✅ Field mapping has been updated!",
           });
           
           return c.json({ response_action: "clear" });
         } catch (error) {
-          logger?.error("❌ [Slack] Error saving field mappings", { error: format(error) });
+          logger?.error("❌ [Slack] Error saving per-connection field mapping", { error: format(error), configId });
           return c.json({ response_action: "clear" });
         }
       }
