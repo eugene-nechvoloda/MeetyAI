@@ -323,7 +323,7 @@ export async function buildTranscriptsTab(userId: string) {
         // Action buttons for this transcript
         const actionButtons: any[] = [];
         
-        // Don't show action buttons while processing (except archive)
+        // Don't show action buttons while processing
         if (isProcessing) {
           // Show disabled-looking context for processing state
           blocks.push({
@@ -335,7 +335,21 @@ export async function buildTranscriptsTab(userId: string) {
               },
             ],
           });
-        } else if (insightCount === 0) {
+        } else {
+          // For completed transcripts, show View Insights if there are insights
+          if (insightCount > 0) {
+            actionButtons.push({
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: "💡 View Insights",
+              },
+              action_id: "view_transcript_insights",
+              value: transcript.id,
+            });
+          }
+          
+          // Always show Re-analyze button for completed transcripts
           actionButtons.push({
             type: "button",
             text: {
@@ -344,22 +358,9 @@ export async function buildTranscriptsTab(userId: string) {
             },
             action_id: "reanalyze_transcript",
             value: transcript.id,
-            style: "primary",
           });
-        } else {
-          actionButtons.push({
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "View Insights",
-            },
-            action_id: "view_transcript_insights",
-            value: transcript.id,
-          });
-        }
-        
-        // Archive button - always add unless processing
-        if (!isProcessing) {
+          
+          // Always show Archive button for completed transcripts
           actionButtons.push({
             type: "button",
             text: {
@@ -437,18 +438,10 @@ export async function buildInsightsTab(userId: string) {
           type: "button",
           text: {
             type: "plain_text",
-            text: "📤 Export to Linear",
+            text: "📤 Export All",
           },
-          action_id: "export_all_linear",
+          action_id: "export_all",
           style: "primary",
-        },
-        {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: "📤 Export to Airtable",
-          },
-          action_id: "export_all_airtable",
         },
         {
           type: "button",

@@ -501,7 +501,151 @@ async function handleInteractivePayload(
       return c.text("", 200);
     }
     
-    // Handle Export to Linear button
+    // Handle Export All button - exports to all configured destinations
+    if (actionId === "export_all") {
+      logger?.info("📤 [Slack] Export All triggered", { userId });
+      
+      try {
+        const { getPrismaAsync } = await import("../mastra/utils/database");
+        const prisma = await getPrismaAsync();
+        
+        // Check which export destinations are configured
+        const airtableConfig = await prisma.exportConfig.findFirst({
+          where: { user_id: userId, provider: "airtable", enabled: true },
+        });
+        
+        const linearConfig = await prisma.exportConfig.findFirst({
+          where: { user_id: userId, provider: "linear", enabled: true },
+        });
+        
+        if (!airtableConfig && !linearConfig) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "⚠️ No export destinations configured.\n\nTo export insights, please:\n1. Click *Export Settings* on the Insights tab\n2. Configure Airtable and/or Linear settings",
+          });
+          return c.text("", 200);
+        }
+        
+        // Get unexported insights for this user (excluding archived)
+        const insights = await prisma.insight.findMany({
+          where: {
+            transcript: { 
+              slack_user_id: userId,
+              archived: false,
+            },
+            archived: false,
+            exported: false,
+          },
+          select: { id: true },
+        });
+        
+        if (insights.length === 0) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "ℹ️ No new insights to export. All your insights have already been exported.",
+          });
+          return c.text("", 200);
+        }
+        
+        const insightIds = insights.map((i: { id: string }) => i.id);
+        const { mastra } = await import("../mastra/index");
+        const exportResults: string[] = [];
+        let totalExported = 0;
+        let totalFailed = 0;
+        
+        // Export to Airtable if configured
+        if (airtableConfig) {
+          try {
+            const { exportAirtableTool } = await import("../mastra/tools/exportAirtableTool");
+            const result = await exportAirtableTool.execute({
+              context: { insightIds, userId },
+              mastra,
+              runtimeContext: {} as any,
+            });
+            
+            if (result.success && result.exportedCount > 0) {
+              exportResults.push(`✅ Airtable: ${result.exportedCount} exported`);
+              totalExported += result.exportedCount;
+            }
+            if (result.failedCount > 0) {
+              exportResults.push(`⚠️ Airtable: ${result.failedCount} failed`);
+              totalFailed += result.failedCount;
+            }
+            if (result.success && result.exportedCount === 0 && result.failedCount === 0) {
+              exportResults.push(`ℹ️ Airtable: All already exported`);
+            }
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : "Unknown error";
+            exportResults.push(`❌ Airtable: ${errorMsg}`);
+            totalFailed += insightIds.length; // Count all as failed on exception
+            logger?.error("Airtable export error", { error: errorMsg });
+          }
+        }
+        
+        // Export to Linear if configured
+        if (linearConfig) {
+          try {
+            const { exportLinearTool } = await import("../mastra/tools/exportLinearTool");
+            const result = await exportLinearTool.execute({
+              context: { insightIds, userId },
+              mastra,
+              runtimeContext: {} as any,
+            });
+            
+            if (result.success && result.exportedCount > 0) {
+              exportResults.push(`✅ Linear: ${result.exportedCount} exported`);
+              totalExported += result.exportedCount;
+            }
+            if (result.failedCount > 0) {
+              exportResults.push(`⚠️ Linear: ${result.failedCount} failed`);
+              totalFailed += result.failedCount;
+            }
+            if (result.success && result.exportedCount === 0 && result.failedCount === 0) {
+              exportResults.push(`ℹ️ Linear: All already exported`);
+            }
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : "Unknown error";
+            exportResults.push(`❌ Linear: ${errorMsg}`);
+            totalFailed += insightIds.length; // Count all as failed on exception
+            logger?.error("Linear export error", { error: errorMsg });
+          }
+        }
+        
+        // Refresh the Insights tab to show updated status
+        try {
+          const { buildInsightsTab } = await import("../mastra/ui/appHomeViews");
+          const insightsView = await buildInsightsTab(userId);
+          await slack.views.publish({
+            user_id: userId,
+            view: insightsView as any,
+          });
+        } catch (refreshError) {
+          logger?.warn("⚠️ [Slack] Failed to refresh Insights tab", { error: format(refreshError) });
+        }
+        
+        // Send result message
+        const summary = totalExported > 0 
+          ? `✅ Export complete!\n\n${exportResults.join("\n")}`
+          : `⚠️ Export results:\n\n${exportResults.join("\n")}`;
+        
+        await slack.chat.postMessage({
+          channel: userId,
+          text: summary,
+        });
+        
+        logger?.info("✅ [Slack] Export All completed", { totalExported, totalFailed, exportResults });
+        return c.text("", 200);
+      } catch (error) {
+        logger?.error("❌ [Slack] Export All error", { error: format(error) });
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ An error occurred while exporting. Please try again.",
+        });
+        return c.text("", 200);
+      }
+    }
+    
+    // Handle Export to Linear button (legacy, kept for compatibility)
     if (actionId === "export_all_linear") {
       logger?.info("📤 [Slack] Export to Linear triggered", { userId });
       
