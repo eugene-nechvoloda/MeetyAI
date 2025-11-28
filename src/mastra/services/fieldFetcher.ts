@@ -86,25 +86,36 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
         const errorText = await response.text();
         console.error("[FieldFetcher] Airtable Meta API error:", response.status, errorText);
         
-        // Try to parse Airtable's error response: { error: { type, message } }
+        // Airtable has TWO error formats:
+        // Format 1 (Meta API): { error: { type: "...", message: "..." } }
+        // Format 2 (Data API): { error: "ERROR_CODE", message: "...", statusCode: 404 }
         let errorType = "";
         let errorMessage = "";
         try {
           const errorJson = JSON.parse(errorText);
-          errorType = errorJson.error?.type || "";
-          errorMessage = errorJson.error?.message || "";
-          console.log("[FieldFetcher] Parsed Airtable error:", { errorType, errorMessage });
+          // Handle both formats
+          if (typeof errorJson.error === "object" && errorJson.error !== null) {
+            // Format 1: Meta API style
+            errorType = errorJson.error?.type || "";
+            errorMessage = errorJson.error?.message || "";
+          } else if (typeof errorJson.error === "string") {
+            // Format 2: Data API style
+            errorType = errorJson.error;
+            errorMessage = errorJson.message || "";
+          }
+          console.log("[FieldFetcher] Parsed Airtable error:", { errorType, errorMessage, format: typeof errorJson.error });
         } catch {
           console.log("[FieldFetcher] Could not parse error JSON");
         }
         
+        // Check for NOT_FOUND errors
         if (response.status === 404 || errorType === "NOT_FOUND") {
           console.log("[FieldFetcher] Base or table not found. Using default fields.");
           return { 
             success: true, 
             fields: DEFAULT_AIRTABLE_FIELDS,
             usingDefaults: true,
-            defaultReason: `Could not find your Airtable base. Please verify your Base ID (${baseId}) is correct.`,
+            defaultReason: `Could not find your Airtable base or table. Please verify your Base ID (${baseId}) and table name are correct.`,
           };
         }
         
