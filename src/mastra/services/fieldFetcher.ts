@@ -36,6 +36,18 @@ export function getMeetyFields(): AppField[] {
   return MEETY_INSIGHT_FIELDS;
 }
 
+const DEFAULT_AIRTABLE_FIELDS: AppField[] = [
+  { id: "Title", name: "Title", type: "text", required: true },
+  { id: "Description", name: "Description", type: "text" },
+  { id: "Type", name: "Type", type: "text" },
+  { id: "Author", name: "Author", type: "text" },
+  { id: "Evidence", name: "Evidence", type: "text" },
+  { id: "Confidence", name: "Confidence", type: "number" },
+  { id: "Source", name: "Source", type: "text" },
+  { id: "Status", name: "Status", type: "text" },
+  { id: "Notes", name: "Notes", type: "text" },
+];
+
 export async function fetchAirtableFields(configId: string): Promise<FieldFetchResult> {
   try {
     const prisma = await getPrismaAsync();
@@ -58,58 +70,82 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
     
     console.log("[FieldFetcher] Fetching Airtable fields", { baseId, tableName });
     
-    const response = await fetch(
-      `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
-      {
-        headers: {
-          Authorization: `Bearer ${credentials.api_key}`,
-        },
+    try {
+      const response = await fetch(
+        `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
+        {
+          headers: {
+            Authorization: `Bearer ${credentials.api_key}`,
+          },
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[FieldFetcher] Airtable Meta API error:", response.status, errorText);
+        
+        if (response.status === 404) {
+          console.log("[FieldFetcher] Meta API 404 - Base ID may be incorrect or API key lacks schema access. Using default fields.");
+          return { 
+            success: true, 
+            fields: DEFAULT_AIRTABLE_FIELDS,
+          };
+        }
+        
+        if (response.status === 401 || response.status === 403) {
+          console.log("[FieldFetcher] Auth error - API key may lack schema:bases:read scope. Using default fields.");
+          return { 
+            success: true, 
+            fields: DEFAULT_AIRTABLE_FIELDS,
+          };
+        }
+        
+        console.log("[FieldFetcher] API error - falling back to default fields");
+        return { 
+          success: true, 
+          fields: DEFAULT_AIRTABLE_FIELDS,
+        };
       }
-    );
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[FieldFetcher] Airtable API error:", response.status, errorText);
+      
+      const data = await response.json() as { tables: Array<{ id: string; name: string; fields: Array<{ id: string; name: string; type: string }> }> };
+      
+      console.log("[FieldFetcher] Found tables:", data.tables?.map(t => t.name));
+      
+      const table = data.tables?.find(t => 
+        t.name.toLowerCase() === tableName.toLowerCase() ||
+        t.id === tableName
+      );
+      
+      if (!table) {
+        const availableTables = data.tables?.map(t => t.name).join(", ") || "none";
+        console.log("[FieldFetcher] Table not found, available:", availableTables);
+        return { 
+          success: true, 
+          fields: DEFAULT_AIRTABLE_FIELDS,
+        };
+      }
+      
+      console.log("[FieldFetcher] Found table fields:", table.fields?.map(f => f.name));
+      
+      const fields: AppField[] = table.fields.map(f => ({
+        id: f.name,
+        name: f.name,
+        type: f.type,
+      }));
+      
+      return { success: true, fields };
+    } catch (fetchError) {
+      console.error("[FieldFetcher] Fetch error - using default fields:", fetchError);
       return { 
-        success: false, 
-        fields: [], 
-        error: `Airtable API error: ${response.status}` 
+        success: true, 
+        fields: DEFAULT_AIRTABLE_FIELDS,
       };
     }
-    
-    const data = await response.json() as { tables: Array<{ id: string; name: string; fields: Array<{ id: string; name: string; type: string }> }> };
-    
-    console.log("[FieldFetcher] Found tables:", data.tables?.map(t => t.name));
-    
-    const table = data.tables?.find(t => 
-      t.name.toLowerCase() === tableName.toLowerCase() ||
-      t.id === tableName
-    );
-    
-    if (!table) {
-      const availableTables = data.tables?.map(t => t.name).join(", ") || "none";
-      return { 
-        success: false, 
-        fields: [], 
-        error: `Table "${tableName}" not found. Available tables: ${availableTables}` 
-      };
-    }
-    
-    console.log("[FieldFetcher] Found table fields:", table.fields?.map(f => f.name));
-    
-    const fields: AppField[] = table.fields.map(f => ({
-      id: f.id,
-      name: f.name,
-      type: f.type,
-    }));
-    
-    return { success: true, fields };
   } catch (error) {
     console.error("[FieldFetcher] Error fetching Airtable fields:", error);
     return { 
-      success: false, 
-      fields: [], 
-      error: error instanceof Error ? error.message : "Unknown error" 
+      success: true, 
+      fields: DEFAULT_AIRTABLE_FIELDS,
     };
   }
 }

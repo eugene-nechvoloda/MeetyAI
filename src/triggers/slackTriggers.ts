@@ -554,6 +554,18 @@ async function handleInteractivePayload(
         });
         
         if (result.success) {
+          // Refresh the Insights tab to show updated status
+          try {
+            const { buildInsightsTab } = await import("../mastra/ui/appHomeViews");
+            const insightsView = await buildInsightsTab(userId);
+            await slack.views.publish({
+              user_id: userId,
+              view: insightsView as any,
+            });
+          } catch (refreshError) {
+            logger?.warn("⚠️ [Slack] Failed to refresh Insights tab", { error: format(refreshError) });
+          }
+          
           await slack.chat.postMessage({
             channel: userId,
             text: `✅ Successfully exported ${result.exportedCount} insight(s) to Linear!${result.failedCount > 0 ? `\n⚠️ ${result.failedCount} insight(s) failed to export.` : ""}`,
@@ -630,6 +642,18 @@ async function handleInteractivePayload(
         });
         
         if (result.success) {
+          // Refresh the Insights tab to show updated status
+          try {
+            const { buildInsightsTab } = await import("../mastra/ui/appHomeViews");
+            const insightsView = await buildInsightsTab(userId);
+            await slack.views.publish({
+              user_id: userId,
+              view: insightsView as any,
+            });
+          } catch (refreshError) {
+            logger?.warn("⚠️ [Slack] Failed to refresh Insights tab", { error: format(refreshError) });
+          }
+          
           await slack.chat.postMessage({
             channel: userId,
             text: `✅ Successfully exported ${result.exportedCount} insight(s) to Airtable!${result.failedCount > 0 ? `\n⚠️ ${result.failedCount} insight(s) failed to export.` : ""}`,
@@ -648,6 +672,137 @@ async function handleInteractivePayload(
         await slack.chat.postMessage({
           channel: userId,
           text: "❌ An error occurred while exporting to Airtable. Please try again.",
+        });
+        return c.text("", 200);
+      }
+    }
+    
+    // Handle single insight export
+    if (actionId === "export_single_insight") {
+      const insightId = payload.actions?.[0]?.value;
+      logger?.info("📤 [Slack] Single insight export triggered", { userId, insightId });
+      
+      if (!insightId) {
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ No insight selected for export.",
+        });
+        return c.text("", 200);
+      }
+      
+      try {
+        const { getPrismaAsync } = await import("../mastra/utils/database");
+        const prisma = await getPrismaAsync();
+        
+        // Check which export destinations are configured
+        const airtableConfig = await prisma.exportConfig.findFirst({
+          where: { user_id: userId, provider: "airtable", enabled: true },
+        });
+        
+        const linearConfig = await prisma.exportConfig.findFirst({
+          where: { user_id: userId, provider: "linear", enabled: true },
+        });
+        
+        if (!airtableConfig && !linearConfig) {
+          await slack.chat.postMessage({
+            channel: userId,
+            text: "⚠️ No export destinations configured.\n\nPlease set up Airtable or Linear in Settings > Export first.",
+          });
+          return c.text("", 200);
+        }
+        
+        const { mastra } = await import("../mastra/index");
+        let anySuccess = false;
+        let anyAttempted = false;
+        const exportResults: string[] = [];
+        
+        // Export to Airtable if configured
+        if (airtableConfig) {
+          anyAttempted = true;
+          try {
+            const { exportAirtableTool } = await import("../mastra/tools/exportAirtableTool");
+            const result = await exportAirtableTool.execute({
+              context: { insightIds: [insightId], userId },
+              mastra,
+              runtimeContext: {} as any,
+            });
+            
+            if (result.success) {
+              if (result.exportedCount > 0) {
+                exportResults.push("✅ Airtable: Exported successfully");
+                anySuccess = true;
+              } else {
+                exportResults.push("ℹ️ Airtable: Already exported or filtered out");
+              }
+            } else {
+              exportResults.push(`❌ Airtable: ${result.error || "Export failed"}`);
+            }
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : "Unknown error";
+            exportResults.push(`❌ Airtable: ${errorMsg}`);
+            logger?.error("Airtable export error", { error: errorMsg });
+          }
+        }
+        
+        // Export to Linear if configured
+        if (linearConfig) {
+          anyAttempted = true;
+          try {
+            const { exportLinearTool } = await import("../mastra/tools/exportLinearTool");
+            const result = await exportLinearTool.execute({
+              context: { insightIds: [insightId], userId },
+              mastra,
+              runtimeContext: {} as any,
+            });
+            
+            if (result.success) {
+              if (result.exportedCount > 0) {
+                exportResults.push("✅ Linear: Exported successfully");
+                anySuccess = true;
+              } else {
+                exportResults.push("ℹ️ Linear: Already exported or filtered out");
+              }
+            } else {
+              exportResults.push(`❌ Linear: ${result.error || "Export failed"}`);
+            }
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : "Unknown error";
+            exportResults.push(`❌ Linear: ${errorMsg}`);
+            logger?.error("Linear export error", { error: errorMsg });
+          }
+        }
+        
+        // Always refresh the Insights tab to show current status
+        try {
+          const { buildInsightsTab } = await import("../mastra/ui/appHomeViews");
+          const insightsView = await buildInsightsTab(userId);
+          await slack.views.publish({
+            user_id: userId,
+            view: insightsView as any,
+          });
+        } catch (refreshError) {
+          logger?.warn("⚠️ [Slack] Failed to refresh Insights tab", { error: format(refreshError) });
+        }
+        
+        // Send result message
+        const resultMessage = anySuccess 
+          ? `✅ Export complete!\n${exportResults.join("\n")}`
+          : anyAttempted 
+            ? `⚠️ Export results:\n${exportResults.join("\n")}`
+            : "⚠️ No export destinations configured.";
+        
+        await slack.chat.postMessage({
+          channel: userId,
+          text: resultMessage,
+        });
+        
+        logger?.info("✅ [Slack] Single insight export completed", { insightId, exportResults });
+        return c.text("", 200);
+      } catch (error) {
+        logger?.error("❌ [Slack] Single insight export error", { error: format(error) });
+        await slack.chat.postMessage({
+          channel: userId,
+          text: "❌ An error occurred while exporting. Please try again.",
         });
         return c.text("", 200);
       }

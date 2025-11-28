@@ -237,8 +237,32 @@ export async function buildTranscriptsTab(userId: string) {
           // Ignore count error
         }
         
-        // Determine status indicator based on transcript.status
-        const status = transcript.status;
+        // Determine status - auto-correct if transcript has insights but status is stuck
+        let status = transcript.status;
+        
+        // If transcript has insights but status is still in a "processing" state, mark as completed
+        if (insightCount > 0 && 
+            (status === "file_uploaded" || 
+             status === "analyzing_pass_1" || 
+             status === "analyzing_pass_2" || 
+             status === "analyzing_pass_3" || 
+             status === "analyzing_pass_4" ||
+             status === "compiling_insights")) {
+          // Auto-correct the status in the database
+          try {
+            await prisma.transcript.update({
+              where: { id: transcript.id },
+              data: { 
+                status: "completed" as any,
+                processed_at: new Date(),
+              },
+            });
+            status = "completed";
+            console.log(`[AppHome] Auto-corrected status for transcript ${transcript.id} to completed (had ${insightCount} insights)`);
+          } catch (e) {
+            console.warn(`[AppHome] Failed to auto-correct status for transcript ${transcript.id}:`, e);
+          }
+        }
         let statusIndicator = "";
         let isProcessing = false;
         
