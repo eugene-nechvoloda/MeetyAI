@@ -82,12 +82,29 @@ export function registerApiRoute<P extends string>(
 }
 
 export function registerCronWorkflow(cronExpression: string, workflow: any) {
+  // Extract workflow ID from the workflow object
+  const workflowId = workflow?.id || workflow?.config?.id || "unknown-workflow";
+  
   const f = inngest.createFunction(
-    { id: "cron-trigger" },
+    { id: `cron-${workflowId}` },
     [{ event: "replit/cron.trigger" }, { cron: cronExpression }],
     async ({ event, step }) => {
-      const run = await workflow.createRunAsync();
-      const result = await run.start({ inputData: {} });
+      // Trigger workflow via HTTP endpoint to ensure proper Mastra context
+      // This prevents "getStorage is not a function" errors
+      const result = await step.run("trigger-workflow-via-http", async () => {
+        const response = await fetch(`http://localhost:5000/api/workflows/${workflowId}/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ inputData: {} }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Workflow ${workflowId} start failed: ${response.statusText}`);
+        }
+        
+        return await response.json();
+      });
+      
       return result;
     },
   );
