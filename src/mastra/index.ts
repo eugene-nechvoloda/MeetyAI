@@ -16,6 +16,13 @@ import { registerSlackTrigger } from "../triggers/slackTriggers";
 import type { Mastra as MastraType } from "@mastra/core";
 import type { TriggerInfoSlackOnNewMessage } from "../triggers/slackTriggers";
 
+function getMastraBaseUrl(): string {
+  if (process.env.NODE_ENV === "production" && process.env.REPLIT_DOMAINS) {
+    return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  }
+  return "http://localhost:5000";
+}
+
 class ProductionPinoLogger extends MastraLogger {
   protected logger: pino.Logger;
 
@@ -1627,7 +1634,8 @@ export const mastra = new Mastra({
                     });
                     
                     // Start analysis workflow via HTTP endpoint (proper Inngest context)
-                    const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+                    const baseUrl = getMastraBaseUrl();
+                    const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
@@ -1686,8 +1694,9 @@ export const mastra = new Mastra({
                   // Start analysis workflow via HTTP endpoint (proper Inngest context)
                   const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
                   const threadId = `slack-modal/${Date.now()}`;
+                  const baseUrl = getMastraBaseUrl();
                   
-                  const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+                  const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1730,8 +1739,9 @@ export const mastra = new Mastra({
                   // Start analysis workflow via HTTP endpoint (proper Inngest context)
                   const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
                   const threadId = `slack-app-home/${Date.now()}`;
+                  const baseUrl = getMastraBaseUrl();
                   
-                  const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+                  const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1991,7 +2001,8 @@ export const mastra = new Mastra({
           
           // Start MeetyAI workflow via HTTP endpoint (proper Inngest context)
           // Throw on failure to enable Slack/Inngest retries
-          const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+          const baseUrl = getMastraBaseUrl();
+          const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

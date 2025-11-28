@@ -17,6 +17,13 @@ import type { z } from "zod";
 
 import { registerApiRoute } from "../mastra/inngest";
 
+function getMastraBaseUrl(): string {
+  if (process.env.NODE_ENV === "production" && process.env.REPLIT_DOMAINS) {
+    return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  }
+  return "http://localhost:5000";
+}
+
 export type Methods = "GET" | "POST" | "PUT" | "DELETE" | "PATCH" | "ALL";
 
 // TODO: Remove when Mastra exports this type.
@@ -306,7 +313,8 @@ async function handleInteractivePayload(
         });
         
         // Trigger re-analysis by using a direct workflow call via HTTP endpoint
-        const response = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+        const baseUrl = getMastraBaseUrl();
+        const response = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

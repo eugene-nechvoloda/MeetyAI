@@ -18,6 +18,16 @@ import { TranscriptOrigin, TranscriptStatus } from "@prisma/client";
 import crypto from "crypto";
 
 /**
+ * Get the base URL for Mastra API calls (production-aware)
+ */
+function getMastraBaseUrl(): string {
+  if (process.env.NODE_ENV === "production" && process.env.REPLIT_DOMAINS) {
+    return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  }
+  return "http://localhost:5000";
+}
+
+/**
  * Generate a SHA-256 hash of the content for deduplication
  */
 function generateContentHash(content: string): string {
@@ -111,7 +121,8 @@ export async function ingestTranscript(
           const message = `Process transcript "${existingTranscript.title}" (ID: ${existingTranscript.id}):\n\n${input.content}`;
           
           // Trigger workflow via HTTP endpoint (proper Inngest context)
-          const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+          const baseUrl = getMastraBaseUrl();
+          const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -211,7 +222,8 @@ export async function ingestTranscript(
         const message = `Process transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${input.content}`;
         
         // Trigger workflow via HTTP endpoint (proper Inngest context)
-        const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+        const baseUrl = getMastraBaseUrl();
+        const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
