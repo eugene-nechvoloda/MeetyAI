@@ -928,9 +928,17 @@ export function buildLinearConfigModal(existingConfig?: any) {
 
 /**
  * Build Airtable configuration modal with field mapping
+ * @param existingConfig - Existing config from database (includes base_id, table_name, credentials_encrypted)
+ * @param hasExistingCredentials - Whether existing encrypted credentials are stored (don't pass the actual key!)
  */
-export function buildAirtableConfigModal(existingConfig?: any) {
+export function buildAirtableConfigModal(existingConfig?: any, hasExistingCredentials?: boolean) {
   const fieldMapping = (existingConfig?.field_mapping as any) || {};
+  const existingBaseId = existingConfig?.base_id || "";
+  
+  // Configure API key field based on whether credentials exist
+  const apiKeyHint = hasExistingCredentials
+    ? "An API key is already saved. Leave blank to keep current, or enter a new one to replace it."
+    : "Get from Airtable > Account > Developer Hub > Personal Access Tokens.";
   
   return {
     type: "modal",
@@ -958,6 +966,7 @@ export function buildAirtableConfigModal(existingConfig?: any) {
       {
         type: "input",
         block_id: "airtable_api_key",
+        optional: !!existingConfig, // Optional if editing existing config
         label: {
           type: "plain_text",
           text: "Airtable Personal Access Token",
@@ -967,12 +976,12 @@ export function buildAirtableConfigModal(existingConfig?: any) {
           action_id: "api_key_input",
           placeholder: {
             type: "plain_text",
-            text: "pat_xxxxxxxxxxxx",
+            text: hasExistingCredentials ? "(existing key saved)" : "pat_xxxxxxxxxxxx",
           },
         },
         hint: {
           type: "plain_text",
-          text: "Get from Airtable > Account > Developer Hub > Personal Access Tokens",
+          text: apiKeyHint,
         },
       },
       {
@@ -985,6 +994,7 @@ export function buildAirtableConfigModal(existingConfig?: any) {
         element: {
           type: "plain_text_input",
           action_id: "base_id_input",
+          initial_value: existingBaseId,
           placeholder: {
             type: "plain_text",
             text: "appXXXXXXXXXXXXXX",

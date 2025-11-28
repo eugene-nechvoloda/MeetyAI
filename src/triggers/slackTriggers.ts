@@ -475,7 +475,10 @@ async function handleInteractivePayload(
         where: { user_id: userId, provider: "airtable" },
       });
       
-      const modal = buildAirtableConfigModal(existingConfig);
+      // Check if credentials exist (don't decrypt for security, just check existence)
+      const hasExistingCredentials = !!existingConfig?.credentials_encrypted;
+      
+      const modal = buildAirtableConfigModal(existingConfig, hasExistingCredentials);
       await slack.views.push({
         trigger_id: payload.trigger_id,
         view: modal as any,
@@ -1231,7 +1234,7 @@ async function handleInteractivePayload(
         
         try {
           const { getPrismaAsync } = await import("../mastra/utils/database");
-          const { encrypt, validateEncryptionKey } = await import("../mastra/utils/encryption");
+          const { encrypt, decrypt, validateEncryptionKey } = await import("../mastra/utils/encryption");
           const prisma = await getPrismaAsync();
           
           // Validate encryption key is available
@@ -1245,7 +1248,7 @@ async function handleInteractivePayload(
             });
           }
           
-          const apiKey = values?.airtable_api_key?.api_key_input?.value;
+          const newApiKey = values?.airtable_api_key?.api_key_input?.value;
           const baseId = values?.airtable_base_id?.base_id_input?.value;
           const tableName = values?.airtable_table_name?.table_name_input?.value || "Insights";
           const label = values?.airtable_label?.label_input?.value || "My Airtable Base";
@@ -1264,27 +1267,56 @@ async function handleInteractivePayload(
           
           logger?.info("📊 [Slack] Airtable field mapping", { fieldMapping });
           
-          if (!apiKey || !baseId) {
+          // Find existing config
+          const existingConfig = await prisma.exportConfig.findFirst({
+            where: { user_id: userId, provider: "airtable" },
+          });
+          
+          // Base ID is always required
+          if (!baseId) {
             return c.json({
               response_action: "errors",
               errors: {
-                airtable_api_key: !apiKey ? "API key is required" : undefined,
-                airtable_base_id: !baseId ? "Base ID is required" : undefined,
+                airtable_base_id: "Base ID is required",
               },
             });
           }
           
-          // Encrypt credentials
+          // API key is required for new configs, optional for updates (uses existing if blank)
+          if (!newApiKey && !existingConfig) {
+            return c.json({
+              response_action: "errors",
+              errors: {
+                airtable_api_key: "API key is required",
+              },
+            });
+          }
+          
+          // Determine which API key to use
+          let apiKeyToUse = newApiKey;
+          if (!newApiKey && existingConfig?.credentials_encrypted) {
+            // User left API key blank, preserve existing
+            try {
+              const existingCredentials = JSON.parse(decrypt(existingConfig.credentials_encrypted));
+              apiKeyToUse = existingCredentials.api_key;
+              logger?.info("📝 [Slack] Using existing API key (user left field blank)");
+            } catch (decryptError) {
+              logger?.error("❌ [Slack] Failed to decrypt existing credentials", { error: format(decryptError) });
+              return c.json({
+                response_action: "errors",
+                errors: {
+                  airtable_api_key: "Could not read existing API key. Please enter a new one.",
+                },
+              });
+            }
+          }
+          
+          // Encrypt credentials with final API key
           const encryptedCredentials = encrypt(JSON.stringify({ 
-            api_key: apiKey,
+            api_key: apiKeyToUse,
             base_id: baseId,
             table_name: tableName,
           }));
-          
-          // Find existing config or create new
-          const existingConfig = await prisma.exportConfig.findFirst({
-            where: { user_id: userId, provider: "airtable" },
-          });
           
           if (existingConfig) {
             await prisma.exportConfig.update({
