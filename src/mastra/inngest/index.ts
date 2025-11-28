@@ -81,18 +81,23 @@ export function registerApiRoute<P extends string>(
   return originalRegisterApiRoute(...args);
 }
 
+function getMastraBaseUrl(): string {
+  if (process.env.NODE_ENV === "production" && process.env.REPLIT_DOMAINS) {
+    return `https://${process.env.REPLIT_DOMAINS.split(",")[0]}`;
+  }
+  return "http://localhost:5000";
+}
+
 export function registerCronWorkflow(cronExpression: string, workflow: any) {
-  // Extract workflow ID from the workflow object
   const workflowId = workflow?.id || workflow?.config?.id || "unknown-workflow";
   
   const f = inngest.createFunction(
     { id: `cron-${workflowId}` },
     [{ event: "replit/cron.trigger" }, { cron: cronExpression }],
     async ({ event, step }) => {
-      // Trigger workflow via HTTP endpoint to ensure proper Mastra context
-      // This prevents "getStorage is not a function" errors
       const result = await step.run("trigger-workflow-via-http", async () => {
-        const response = await fetch(`http://localhost:5000/api/workflows/${workflowId}/start`, {
+        const baseUrl = getMastraBaseUrl();
+        const response = await fetch(`${baseUrl}/api/workflows/${workflowId}/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ inputData: {} }),
