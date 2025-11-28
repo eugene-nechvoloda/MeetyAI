@@ -86,23 +86,53 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
         const errorText = await response.text();
         console.error("[FieldFetcher] Airtable Meta API error:", response.status, errorText);
         
-        if (response.status === 404) {
-          console.log("[FieldFetcher] Meta API 404 - Base ID may be incorrect or API key lacks schema access. Using default fields.");
+        // Try to parse Airtable's error response: { error: { type, message } }
+        let errorType = "";
+        let errorMessage = "";
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorType = errorJson.error?.type || "";
+          errorMessage = errorJson.error?.message || "";
+          console.log("[FieldFetcher] Parsed Airtable error:", { errorType, errorMessage });
+        } catch {
+          console.log("[FieldFetcher] Could not parse error JSON");
+        }
+        
+        if (response.status === 404 || errorType === "NOT_FOUND") {
+          console.log("[FieldFetcher] Base or table not found. Using default fields.");
           return { 
             success: true, 
             fields: DEFAULT_AIRTABLE_FIELDS,
             usingDefaults: true,
-            defaultReason: "Could not find your Airtable base. Please verify your Base ID is correct.",
+            defaultReason: `Could not find your Airtable base. Please verify your Base ID (${baseId}) is correct.`,
           };
         }
         
         if (response.status === 401 || response.status === 403) {
-          console.log("[FieldFetcher] Auth error - API key may lack schema:bases:read scope. Using default fields.");
+          // Provide specific message based on the actual error type
+          let reason = "";
+          
+          if (errorType === "AUTHENTICATION_REQUIRED" || errorType === "INVALID_API_KEY") {
+            reason = "Your Airtable API key appears to be invalid or expired. Please check your API key in Settings.";
+          } else if (errorType === "NOT_AUTHORIZED" || errorType === "INVALID_PERMISSIONS") {
+            reason = `Your API key doesn't have access to this base. Make sure the Personal Access Token has access to the workspace containing base ${baseId}.`;
+          } else if (errorType === "INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND") {
+            reason = `Base not found or not accessible. Verify the Base ID (${baseId}) and ensure your API key has access to it.`;
+          } else if (errorMessage.toLowerCase().includes("scope")) {
+            reason = `Missing required scope: ${errorMessage}. Please update your Personal Access Token.`;
+          } else if (errorMessage) {
+            reason = `Airtable error: ${errorMessage}`;
+          } else {
+            // Generic fallback - but mention it could be access issue, not just scope
+            reason = `Could not access Airtable schema. This could be: 1) API key lacks access to base ${baseId}, 2) Base ID is incorrect, or 3) Missing schema:bases:read scope.`;
+          }
+          
+          console.log("[FieldFetcher] Auth error - using default fields.", { reason });
           return { 
             success: true, 
             fields: DEFAULT_AIRTABLE_FIELDS,
             usingDefaults: true,
-            defaultReason: "Your API key doesn't have permission to read the schema. Add 'schema:bases:read' scope or use these common fields.",
+            defaultReason: reason,
           };
         }
         
@@ -111,7 +141,7 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
           success: true, 
           fields: DEFAULT_AIRTABLE_FIELDS,
           usingDefaults: true,
-          defaultReason: "Could not connect to Airtable. Using common default fields.",
+          defaultReason: errorMessage || "Could not connect to Airtable. Using common default fields.",
         };
       }
       
