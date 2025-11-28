@@ -181,10 +181,22 @@ export const exportAirtableTool = createTool({
             insightId: insight.id,
             recordId,
           });
-        } catch (exportError) {
-          logger.error("Failed to export insight", {
+        } catch (exportError: any) {
+          // Extract error details - Airtable errors have specific formats
+          let errorMessage = "Unknown";
+          if (exportError instanceof Error) {
+            errorMessage = exportError.message;
+          } else if (typeof exportError === "object" && exportError !== null) {
+            errorMessage = JSON.stringify(exportError);
+          } else if (typeof exportError === "string") {
+            errorMessage = exportError;
+          }
+          
+          logger.error("❌ [ExportAirtableTool] Failed to export insight", {
             insightId: insight.id,
-            error: exportError instanceof Error ? exportError.message : "Unknown",
+            error: errorMessage,
+            errorType: typeof exportError,
+            errorObj: exportError,
           });
           
           // Mark as export_failed
