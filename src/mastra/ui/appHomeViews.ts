@@ -336,19 +336,6 @@ export async function buildTranscriptsTab(userId: string) {
             ],
           });
         } else {
-          // For completed transcripts, show View Insights if there are insights
-          if (insightCount > 0) {
-            actionButtons.push({
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: "💡 View Insights",
-              },
-              action_id: "view_transcript_insights",
-              value: transcript.id,
-            });
-          }
-          
           // Always show Re-analyze button for completed transcripts
           actionButtons.push({
             type: "button",
@@ -527,11 +514,11 @@ export async function buildInsightsTab(userId: string) {
           idea: "💭",
           gain: "📈",
           outcome: "🎯",
-          objection: "⚠️",
+          objection: "🤔",
           buying_signal: "💰",
           question: "❓",
           feedback: "💬",
-          confusion: "😵",
+          confusion: "😕",
           opportunity: "🚀",
           insight: "💡",
         };

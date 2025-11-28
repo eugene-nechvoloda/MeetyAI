@@ -568,7 +568,7 @@ export const mastra = new Mastra({
                     where: { user_id: userId },
                   });
                   
-                  const defaultModel = modelConfigs.find(m => m.is_default);
+                  const defaultModel = modelConfigs.find((m: { is_default: boolean }) => m.is_default);
                   
                   await slack.views.open({
                     trigger_id: payload.trigger_id,
@@ -648,7 +648,7 @@ export const mastra = new Mastra({
                     where: { user_id: userId },
                   });
                   
-                  const linearConfig = exportConfigs.find(e => e.provider === "linear");
+                  const linearConfig = exportConfigs.find((e: { provider: string }) => e.provider === "linear");
                   
                   await slack.views.open({
                     trigger_id: payload.trigger_id,
@@ -837,7 +837,7 @@ export const mastra = new Mastra({
                     where: { user_id: userId },
                   });
                   
-                  const linearConfig = exportConfigs.find(e => e.provider === "linear");
+                  const linearConfig = exportConfigs.find((e: { provider: string }) => e.provider === "linear");
                   
                   await slack.views.open({
                     trigger_id: payload.trigger_id,
@@ -1364,7 +1364,7 @@ export const mastra = new Mastra({
                       },
                     });
                     
-                    const insightIds = insights.map(i => i.id);
+                    const insightIds = insights.map((i: { id: string }) => i.id);
                     
                     if (insightIds.length === 0) {
                       // Send ephemeral message
@@ -1387,7 +1387,7 @@ export const mastra = new Mastra({
                     const result = await exportLinearTool.execute({
                       context: { insightIds, userId },
                       mastra,
-                      runtimeContext: {},
+                      runtimeContext: {} as any,
                     });
                     
                     // Send result message
@@ -1436,7 +1436,7 @@ export const mastra = new Mastra({
                       },
                     });
                     
-                    const insightIds = insights.map(i => i.id);
+                    const insightIds = insights.map((i: { id: string }) => i.id);
                     
                     if (insightIds.length === 0) {
                       // Send ephemeral message
@@ -1459,7 +1459,7 @@ export const mastra = new Mastra({
                     const result = await exportAirtableTool.execute({
                       context: { insightIds, userId },
                       mastra,
-                      runtimeContext: {},
+                      runtimeContext: {} as any,
                     });
                     
                     // Send result message
@@ -1537,14 +1537,14 @@ export const mastra = new Mastra({
                       result = await exportLinearTool.execute({
                         context: { insightIds: [insightId], userId },
                         mastra,
-                        runtimeContext: {},
+                        runtimeContext: {} as any,
                       });
                     } else if (exportConfig.provider === "airtable") {
                       const { exportAirtableTool } = await import("./tools/exportAirtableTool");
                       result = await exportAirtableTool.execute({
                         context: { insightIds: [insightId], userId },
                         mastra,
-                        runtimeContext: {},
+                        runtimeContext: {} as any,
                       });
                     } else {
                       throw new Error(`Unsupported export provider: ${exportConfig.provider}`);
@@ -1626,19 +1626,26 @@ export const mastra = new Mastra({
                       text: `✅ Message added to MeetyAI! Analyzing now...`,
                     });
                     
-                    // Start analysis workflow
-                    const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
-                    await run.start({
-                      inputData: {
-                        message: messageText,
-                        threadId: `slack-message-action/${Date.now()}`,
-                        slackUserId: userId,
-                        slackChannel: userId, // DM for results
-                        threadTs: undefined,
-                      },
+                    // Start analysis workflow via HTTP endpoint (proper Inngest context)
+                    const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        inputData: {
+                          message: messageText,
+                          threadId: `slack-message-action/${Date.now()}`,
+                          slackUserId: userId,
+                          slackChannel: userId, // DM for results
+                          threadTs: undefined,
+                        },
+                      }),
                     });
                     
-                    logger?.info("✅ [Message Action] Analysis workflow started");
+                    if (!workflowResponse.ok) {
+                      throw new Error(`Workflow start failed: ${workflowResponse.statusText}`);
+                    }
+                    
+                    logger?.info("✅ [Message Action] Analysis workflow started via HTTP");
                     return c.json({ ok: true });
                     
                   } catch (error) {
@@ -1676,22 +1683,29 @@ export const mastra = new Mastra({
                     });
                   }
                   
-                  // Start analysis workflow
+                  // Start analysis workflow via HTTP endpoint (proper Inngest context)
                   const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
                   const threadId = `slack-modal/${Date.now()}`;
                   
-                  const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
-                  await run.start({
-                    inputData: {
-                      message,
-                      threadId,
-                      slackUserId: userId,
-                      slackChannel: userId, // DM
-                      threadTs: undefined,
-                    },
+                  const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      inputData: {
+                        message,
+                        threadId,
+                        slackUserId: userId,
+                        slackChannel: userId, // DM
+                        threadTs: undefined,
+                      },
+                    }),
                   });
                   
-                  logger?.info("✅ [MeetyAI Modal] Analysis started");
+                  if (!workflowResponse.ok) {
+                    logger?.error("❌ [MeetyAI Modal] Workflow start failed", { status: workflowResponse.status });
+                  }
+                  
+                  logger?.info("✅ [MeetyAI Modal] Analysis started via HTTP");
                   return c.json({ response_action: "clear" });
                   
                 } else if (callbackId === "upload_transcript_modal") {
@@ -1713,22 +1727,29 @@ export const mastra = new Mastra({
                     hasLink: !!transcriptLink,
                   });
                   
-                  // Start analysis workflow
+                  // Start analysis workflow via HTTP endpoint (proper Inngest context)
                   const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
                   const threadId = `slack-app-home/${Date.now()}`;
                   
-                  const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
-                  await run.start({
-                    inputData: {
-                      message,
-                      threadId,
-                      slackUserId: userId,
-                      slackChannel: userId, // DM
-                      threadTs: undefined,
-                    },
+                  const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      inputData: {
+                        message,
+                        threadId,
+                        slackUserId: userId,
+                        slackChannel: userId, // DM
+                        threadTs: undefined,
+                      },
+                    }),
                   });
                   
-                  logger?.info("✅ [App Home Upload] Analysis workflow started");
+                  if (!workflowResponse.ok) {
+                    logger?.error("❌ [App Home Upload] Workflow start failed", { status: workflowResponse.status });
+                  }
+                  
+                  logger?.info("✅ [App Home Upload] Analysis workflow started via HTTP");
                   return c.json({ response_action: "clear" });
                   
                 } else if (callbackId === "meetyai_settings_modal") {

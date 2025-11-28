@@ -107,25 +107,31 @@ export async function ingestTranscript(
             transcriptId: existingTranscript.id,
           });
 
-          const mastra = await getMastraLazy();
           const threadId = `transcript/${existingTranscript.id}`;
           const message = `Process transcript "${existingTranscript.title}" (ID: ${existingTranscript.id}):\n\n${input.content}`;
           
-          const workflow = mastra.getWorkflow("metiyWorkflow");
-          const run = await workflow.createRunAsync();
-          await run.start({
-            inputData: {
-              message,
-              threadId,
-              slackUserId: input.slackUserId,
-              slackChannel: input.slackChannelId || input.slackUserId,
-              threadTs: undefined,
-              transcriptId: existingTranscript.id,
-            },
+          // Trigger workflow via HTTP endpoint (proper Inngest context)
+          const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              inputData: {
+                message,
+                threadId,
+                slackUserId: input.slackUserId,
+                slackChannel: input.slackChannelId || input.slackUserId,
+                threadTs: undefined,
+                transcriptId: existingTranscript.id,
+              },
+            }),
           });
 
+          if (!workflowResponse.ok) {
+            throw new Error(`Workflow start failed: ${workflowResponse.statusText}`);
+          }
+
           workflowStarted = true;
-          logger?.info("✅ [TranscriptIngestion] Workflow triggered for existing transcript", {
+          logger?.info("✅ [TranscriptIngestion] Workflow triggered for existing transcript via HTTP", {
             transcriptId: existingTranscript.id,
             threadId,
           });
@@ -201,25 +207,31 @@ export async function ingestTranscript(
           transcriptId: transcript.id,
         });
 
-        const mastra = await getMastraLazy();
         const threadId = `transcript/${transcript.id}`;
         const message = `Process transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${input.content}`;
         
-        const workflow = mastra.getWorkflow("metiyWorkflow");
-        const run = await workflow.createRunAsync();
-        await run.start({
-          inputData: {
-            message,
-            threadId,
-            slackUserId: input.slackUserId,
-            slackChannel: input.slackChannelId || input.slackUserId,
-            threadTs: undefined,
-            transcriptId: transcript.id,
-          },
+        // Trigger workflow via HTTP endpoint (proper Inngest context)
+        const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inputData: {
+              message,
+              threadId,
+              slackUserId: input.slackUserId,
+              slackChannel: input.slackChannelId || input.slackUserId,
+              threadTs: undefined,
+              transcriptId: transcript.id,
+            },
+          }),
         });
 
+        if (!workflowResponse.ok) {
+          throw new Error(`Workflow start failed: ${workflowResponse.statusText}`);
+        }
+
         workflowStarted = true;
-        logger?.info("✅ [TranscriptIngestion] Workflow started", {
+        logger?.info("✅ [TranscriptIngestion] Workflow started via HTTP", {
           transcriptId: transcript.id,
           threadId,
         });

@@ -289,25 +289,43 @@ async function handleInteractivePayload(
           text: `🔄 *Re-analyzing transcript: ${transcript.title}*\n\nThis may take a minute. I'll notify you when the analysis is complete.`,
         });
         
-        // Trigger the workflow to re-analyze using .start() for proper Mastra context
-        const { mastra: mastraInstance } = await import("../mastra/index");
-        const threadId = `transcript/${transcript.id}`;
-        const message = `Re-analyze transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${transcript.transcript_text}`;
+        // Use the transcript ingestion service to trigger re-analysis
+        // This properly handles workflow execution through Inngest
+        const { ingestTranscript } = await import("../mastra/services/transcriptIngestion");
+        const { TranscriptOrigin } = await import("@prisma/client");
         
-        const workflow = mastraInstance.getWorkflow("metiyWorkflow");
-        const run = await workflow.createRunAsync();
-        await run.start({
-          inputData: {
-            message,
-            threadId,
-            slackUserId: userId,
-            slackChannel: userId,
-            threadTs: undefined,
-            transcriptId: transcript.id,
-          },
+        // Delete existing insights before re-analysis
+        await prisma.insight.deleteMany({
+          where: { transcript_id: transcript.id },
         });
         
-        logger?.info("✅ [Slack] Re-analysis triggered", { transcriptId, threadId });
+        // Update transcript status to pending
+        await prisma.transcript.update({
+          where: { id: transcript.id },
+          data: { status: "pending" },
+        });
+        
+        // Trigger re-analysis by using a direct workflow call via HTTP endpoint
+        const response = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inputData: {
+              message: `Re-analyze transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${transcript.transcript_text}`,
+              threadId: `transcript/${transcript.id}`,
+              slackUserId: userId,
+              slackChannel: userId,
+              threadTs: undefined,
+              transcriptId: transcript.id,
+            },
+          }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Workflow start failed: ${response.statusText}`);
+        }
+        
+        logger?.info("✅ [Slack] Re-analysis triggered via HTTP endpoint", { transcriptId });
         
         // Log the activity
         await prisma.transcriptActivity.create({
