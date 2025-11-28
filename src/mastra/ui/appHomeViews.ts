@@ -1357,15 +1357,37 @@ export async function buildConnectionFieldMappingModal(configId: string) {
   
   const appFields = appFieldsResult.fields;
   
-  blocks.push({
-    type: "context",
-    elements: [
-      {
-        type: "mrkdwn",
-        text: `Found ${appFields.length} fields in your ${providerName} table`,
-      },
-    ],
-  });
+  // Show context about the fields - whether fetched or using defaults
+  if (appFieldsResult.usingDefaults) {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `⚠️ ${appFieldsResult.defaultReason}`,
+        },
+      ],
+    });
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `Using ${appFields.length} common default fields. You can manually type field names that match your actual ${providerName} table.`,
+        },
+      ],
+    });
+  } else {
+    blocks.push({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: `✅ Found ${appFields.length} fields from your ${providerName} table`,
+        },
+      ],
+    });
+  }
   
   const noneOption = { text: { type: "plain_text" as const, text: "(Don't map)" }, value: "__none__" };
   const fieldOptions = appFields.map(f => ({

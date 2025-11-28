@@ -1982,24 +1982,42 @@ export const mastra = new Mastra({
           // Create thread ID for memory (consistent across messages in same thread)
           const threadId = `slack/${rootThreadTs}`;
           
-          logger?.info("📝 [MeetyAI Slack Trigger] Starting workflow", {
+          logger?.info("📝 [MeetyAI Slack Trigger] Starting workflow via HTTP", {
             channel,
             userId,
             threadId,
             rootThreadTs,
           });
           
-          // Start MeetyAI workflow
-          const run = await mastra.getWorkflow("metiyWorkflow").createRunAsync();
-          return await run.start({
-            inputData: {
-              message,
-              threadId,
-              slackUserId: userId,
-              slackChannel: channel,
-              threadTs: rootThreadTs,
-            },
+          // Start MeetyAI workflow via HTTP endpoint (proper Inngest context)
+          // Throw on failure to enable Slack/Inngest retries
+          const workflowResponse = await fetch("http://localhost:5000/api/workflows/metiyWorkflow/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              inputData: {
+                message,
+                threadId,
+                slackUserId: userId,
+                slackChannel: channel,
+                threadTs: rootThreadTs,
+              },
+            }),
           });
+          
+          if (!workflowResponse.ok) {
+            const responseBody = await workflowResponse.text().catch(() => "Unable to read response body");
+            logger?.error("❌ [MeetyAI Slack Trigger] Workflow start failed", { 
+              status: workflowResponse.status,
+              statusText: workflowResponse.statusText,
+              body: responseBody,
+            });
+            // Throw to trigger Slack/Inngest retry mechanism
+            throw new Error(`Workflow start failed: ${workflowResponse.status} ${workflowResponse.statusText}`);
+          }
+          
+          logger?.info("✅ [MeetyAI Slack Trigger] Workflow started successfully");
+          return null;
         },
       }),
     ],

@@ -58,8 +58,22 @@ export const exportAirtableTool = createTool({
         apiKey: credentials.api_key,
       });
       
-      const base = Airtable.base(credentials.base_id || config.team_id || "");
-      const table = base(credentials.table_name || "Insights");
+      // Use credentials first, fall back to config fields
+      const baseId = credentials.base_id || config.base_id || "";
+      const tableName = credentials.table_name || config.table_name || "Insights";
+      
+      logger.info("🔧 [ExportAirtableTool] Airtable connection config", { 
+        baseId, 
+        tableName,
+        hasApiKey: !!credentials.api_key,
+      });
+      
+      if (!baseId) {
+        throw new Error("Airtable Base ID not configured. Please check your Airtable settings.");
+      }
+      
+      const base = Airtable.base(baseId);
+      const table = base(tableName);
       
       const airtableRecordIds: string[] = [];
       let failedCount = 0;
@@ -183,23 +197,60 @@ export const exportAirtableTool = createTool({
           });
         } catch (exportError: any) {
           // Extract error details - Airtable errors have specific formats
-          let errorMessage = "Unknown";
+          let errorMessage = "Unknown error";
+          let userFriendlyError = "Export failed";
+          
+          // Try to extract detailed error information
           if (exportError instanceof Error) {
             errorMessage = exportError.message;
+            userFriendlyError = exportError.message;
           } else if (typeof exportError === "object" && exportError !== null) {
-            errorMessage = JSON.stringify(exportError);
+            // Airtable SDK returns errors in format: { error: { type, message } }
+            // Try to get the most specific message available
+            const nestedError = exportError.error && typeof exportError.error === "object" ? exportError.error : null;
+            const airtableMessage = 
+              nestedError?.message ||
+              exportError.message || 
+              exportError.statusMessage || 
+              (typeof exportError.error === "string" ? exportError.error : null);
+            
+            if (airtableMessage) {
+              errorMessage = airtableMessage;
+            } else {
+              errorMessage = JSON.stringify(exportError);
+            }
+            
+            // Parse Airtable-specific error types (nested in error.type)
+            const errorType = nestedError?.type || exportError.error;
+            const statusCode = exportError.statusCode || exportError.status;
+            
+            if (errorType === "NOT_FOUND" || statusCode === 404) {
+              userFriendlyError = "Airtable table or base not found. Please check your Base ID and Table Name in settings.";
+            } else if (errorType === "INVALID_PERMISSIONS" || errorType === "AUTHENTICATION_REQUIRED" || statusCode === 403) {
+              userFriendlyError = "Airtable API key does not have permission to write to this base/table.";
+            } else if (errorType === "INVALID_REQUEST_UNKNOWN" || errorType === "UNKNOWN_FIELD_NAME") {
+              userFriendlyError = "Field names in your Airtable table may not match your field mapping settings.";
+            } else if (statusCode === 401) {
+              userFriendlyError = "Airtable API key is invalid or expired. Please update your settings.";
+            } else if (statusCode === 422 || errorType === "INVALID_REQUEST") {
+              userFriendlyError = `Airtable rejected the data format: ${airtableMessage || "check your field types match"}`;
+            } else if (airtableMessage) {
+              userFriendlyError = airtableMessage;
+            }
           } else if (typeof exportError === "string") {
             errorMessage = exportError;
+            userFriendlyError = exportError;
           }
           
           logger.error("❌ [ExportAirtableTool] Failed to export insight", {
             insightId: insight.id,
             error: errorMessage,
+            userFriendlyError,
             errorType: typeof exportError,
             errorObj: exportError,
           });
           
-          // Mark as export_failed
+          // Mark as export_failed with helpful error message
           try {
             await prisma.insight.update({
               where: { id: insight.id },
@@ -207,7 +258,8 @@ export const exportAirtableTool = createTool({
                 status: "export_failed",
                 export_destinations: {
                   provider: "airtable",
-                  error: exportError instanceof Error ? exportError.message : "Unknown error",
+                  error: userFriendlyError,
+                  technical_error: errorMessage,
                   attempted_at: new Date().toISOString(),
                   status: "failed",
                 } as any,

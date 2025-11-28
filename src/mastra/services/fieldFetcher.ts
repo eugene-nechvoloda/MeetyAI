@@ -19,6 +19,8 @@ export interface FieldFetchResult {
   success: boolean;
   fields: AppField[];
   error?: string;
+  usingDefaults?: boolean;
+  defaultReason?: string;
 }
 
 const MEETY_INSIGHT_FIELDS: AppField[] = [
@@ -89,6 +91,8 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
           return { 
             success: true, 
             fields: DEFAULT_AIRTABLE_FIELDS,
+            usingDefaults: true,
+            defaultReason: "Could not find your Airtable base. Please verify your Base ID is correct.",
           };
         }
         
@@ -97,6 +101,8 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
           return { 
             success: true, 
             fields: DEFAULT_AIRTABLE_FIELDS,
+            usingDefaults: true,
+            defaultReason: "Your API key doesn't have permission to read the schema. Add 'schema:bases:read' scope or use these common fields.",
           };
         }
         
@@ -104,6 +110,8 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
         return { 
           success: true, 
           fields: DEFAULT_AIRTABLE_FIELDS,
+          usingDefaults: true,
+          defaultReason: "Could not connect to Airtable. Using common default fields.",
         };
       }
       
@@ -122,6 +130,8 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
         return { 
           success: true, 
           fields: DEFAULT_AIRTABLE_FIELDS,
+          usingDefaults: true,
+          defaultReason: `Table "${tableName}" not found. Available tables: ${availableTables}. Using default fields.`,
         };
       }
       
@@ -139,6 +149,8 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
       return { 
         success: true, 
         fields: DEFAULT_AIRTABLE_FIELDS,
+        usingDefaults: true,
+        defaultReason: "Network error connecting to Airtable. Using common default fields.",
       };
     }
   } catch (error) {
@@ -146,6 +158,8 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
     return { 
       success: true, 
       fields: DEFAULT_AIRTABLE_FIELDS,
+      usingDefaults: true,
+      defaultReason: "Error reading configuration. Using common default fields.",
     };
   }
 }
