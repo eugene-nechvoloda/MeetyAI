@@ -1248,10 +1248,12 @@ async function handleInteractivePayload(
             });
           }
           
-          const newApiKey = values?.airtable_api_key?.api_key_input?.value;
-          const baseId = values?.airtable_base_id?.base_id_input?.value;
-          const tableName = values?.airtable_table_name?.table_name_input?.value || "Insights";
-          const label = values?.airtable_label?.label_input?.value || "My Airtable Base";
+          // Trim all input values to prevent whitespace issues
+          const rawApiKey = values?.airtable_api_key?.api_key_input?.value;
+          const newApiKey = rawApiKey?.trim() || "";
+          const baseId = (values?.airtable_base_id?.base_id_input?.value || "").trim();
+          const tableName = (values?.airtable_table_name?.table_name_input?.value || "Insights").trim();
+          const label = (values?.airtable_label?.label_input?.value || "My Airtable Base").trim();
           
           // Extract field mapping values
           const fieldMapping = {
@@ -1265,11 +1267,24 @@ async function handleInteractivePayload(
             status: values?.airtable_field_status?.field_input?.value || "Status",
           };
           
-          logger?.info("📊 [Slack] Airtable field mapping", { fieldMapping });
+          logger?.info("📊 [Slack] Airtable config submission", { 
+            hasNewApiKey: !!newApiKey, 
+            apiKeyLength: newApiKey?.length || 0,
+            baseId, 
+            tableName,
+            fieldMapping,
+          });
           
           // Find existing config
           const existingConfig = await prisma.exportConfig.findFirst({
             where: { user_id: userId, provider: "airtable" },
+          });
+          
+          logger?.info("📊 [Slack] Existing Airtable config", { 
+            hasExistingConfig: !!existingConfig,
+            existingConfigId: existingConfig?.id,
+            hasExistingCredentials: !!existingConfig?.credentials_encrypted,
+            credentialsLength: existingConfig?.credentials_encrypted?.length || 0,
           });
           
           // Base ID is always required
@@ -1297,8 +1312,29 @@ async function handleInteractivePayload(
           if (!newApiKey && existingConfig?.credentials_encrypted) {
             // User left API key blank, preserve existing
             try {
-              const existingCredentials = JSON.parse(decrypt(existingConfig.credentials_encrypted));
+              logger?.info("📝 [Slack] Attempting to decrypt existing credentials...");
+              const decryptedStr = decrypt(existingConfig.credentials_encrypted);
+              logger?.info("📝 [Slack] Decrypted credentials string length:", { length: decryptedStr?.length || 0 });
+              
+              const existingCredentials = JSON.parse(decryptedStr);
+              logger?.info("📝 [Slack] Parsed existing credentials", { 
+                hasApiKey: !!existingCredentials?.api_key,
+                apiKeyLength: existingCredentials?.api_key?.length || 0,
+                hasBaseId: !!existingCredentials?.base_id,
+              });
+              
               apiKeyToUse = existingCredentials.api_key;
+              
+              if (!apiKeyToUse) {
+                logger?.error("❌ [Slack] Existing credentials have no api_key field!");
+                return c.json({
+                  response_action: "errors",
+                  errors: {
+                    airtable_api_key: "Stored API key is invalid. Please enter a new one.",
+                  },
+                });
+              }
+              
               logger?.info("📝 [Slack] Using existing API key (user left field blank)");
             } catch (decryptError) {
               logger?.error("❌ [Slack] Failed to decrypt existing credentials", { error: format(decryptError) });
@@ -1311,12 +1347,35 @@ async function handleInteractivePayload(
             }
           }
           
+          // Final validation: ensure we have an API key
+          if (!apiKeyToUse) {
+            logger?.error("❌ [Slack] No API key available after all checks", {
+              hadNewApiKey: !!newApiKey,
+              hadExistingConfig: !!existingConfig,
+            });
+            return c.json({
+              response_action: "errors",
+              errors: {
+                airtable_api_key: "API key is required",
+              },
+            });
+          }
+          
           // Encrypt credentials with final API key
-          const encryptedCredentials = encrypt(JSON.stringify({ 
+          const credentialsToSave = { 
             api_key: apiKeyToUse,
             base_id: baseId,
             table_name: tableName,
-          }));
+          };
+          
+          logger?.info("📝 [Slack] Saving credentials", {
+            hasApiKey: !!credentialsToSave.api_key,
+            apiKeyLength: credentialsToSave.api_key?.length || 0,
+            baseId: credentialsToSave.base_id,
+            tableName: credentialsToSave.table_name,
+          });
+          
+          const encryptedCredentials = encrypt(JSON.stringify(credentialsToSave));
           
           if (existingConfig) {
             await prisma.exportConfig.update({

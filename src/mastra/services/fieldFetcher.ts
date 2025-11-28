@@ -54,23 +54,61 @@ export async function fetchAirtableFields(configId: string): Promise<FieldFetchR
   try {
     const prisma = await getPrismaAsync();
     
+    console.log("[FieldFetcher] Looking up config", { configId });
+    
     const config = await prisma.exportConfig.findUnique({
       where: { id: configId },
+    });
+    
+    console.log("[FieldFetcher] Found config", { 
+      hasConfig: !!config,
+      provider: config?.provider,
+      hasCredentials: !!config?.credentials_encrypted,
+      credentialsLength: config?.credentials_encrypted?.length || 0,
     });
     
     if (!config || config.provider !== "airtable") {
       return { success: false, fields: [], error: "Airtable configuration not found" };
     }
     
-    const credentials = JSON.parse(decrypt(config.credentials_encrypted));
+    if (!config.credentials_encrypted) {
+      console.error("[FieldFetcher] Config exists but credentials_encrypted is empty!");
+      return { success: false, fields: [], error: "Airtable credentials are missing. Please reconfigure." };
+    }
+    
+    let credentials: { api_key?: string; base_id?: string; table_name?: string };
+    try {
+      const decryptedStr = decrypt(config.credentials_encrypted);
+      console.log("[FieldFetcher] Decrypted credentials", { length: decryptedStr?.length || 0 });
+      
+      credentials = JSON.parse(decryptedStr);
+      console.log("[FieldFetcher] Parsed credentials", { 
+        hasApiKey: !!credentials?.api_key,
+        apiKeyLength: credentials?.api_key?.length || 0,
+        hasBaseId: !!credentials?.base_id,
+      });
+    } catch (decryptError) {
+      console.error("[FieldFetcher] Failed to decrypt/parse credentials:", decryptError);
+      return { 
+        success: true, 
+        fields: DEFAULT_AIRTABLE_FIELDS,
+        usingDefaults: true,
+        defaultReason: "Could not read stored credentials. Please reconfigure Airtable.",
+      };
+    }
+    
     const baseId = credentials.base_id || config.base_id;
     const tableName = config.table_name || credentials.table_name || "Insights";
     
     if (!credentials.api_key || !baseId) {
-      return { success: false, fields: [], error: "Missing API key or Base ID" };
+      console.error("[FieldFetcher] Missing API key or Base ID", {
+        hasApiKey: !!credentials.api_key,
+        hasBaseId: !!baseId,
+      });
+      return { success: false, fields: [], error: "Missing API key or Base ID. Please reconfigure Airtable." };
     }
     
-    console.log("[FieldFetcher] Fetching Airtable fields", { baseId, tableName });
+    console.log("[FieldFetcher] Fetching Airtable fields", { baseId, tableName, apiKeyPrefix: credentials.api_key?.substring(0, 4) });
     
     try {
       const response = await fetch(

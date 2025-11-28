@@ -45,13 +45,50 @@ export const exportAirtableTool = createTool({
         },
       });
       
+      logger.info("🔧 [ExportAirtableTool] Found config", {
+        hasConfig: !!config,
+        configId: config?.id,
+        hasCredentials: !!config?.credentials_encrypted,
+        credentialsLength: config?.credentials_encrypted?.length || 0,
+      });
+      
       if (!config) {
         throw new Error("Airtable not configured. Please set up Airtable in Settings > Export.");
       }
       
+      if (!config.credentials_encrypted) {
+        logger.error("❌ [ExportAirtableTool] Config exists but credentials_encrypted is empty!");
+        throw new Error("Airtable credentials are missing. Please reconfigure Airtable in Settings.");
+      }
+      
       // Decrypt credentials
       const { decrypt } = await import("../utils/encryption");
-      const credentials = JSON.parse(decrypt(config.credentials_encrypted));
+      let credentials: { api_key?: string; base_id?: string; table_name?: string };
+      
+      try {
+        const decryptedStr = decrypt(config.credentials_encrypted);
+        logger.info("🔧 [ExportAirtableTool] Decrypted credentials", {
+          decryptedLength: decryptedStr?.length || 0,
+        });
+        
+        credentials = JSON.parse(decryptedStr);
+        logger.info("🔧 [ExportAirtableTool] Parsed credentials", {
+          hasApiKey: !!credentials?.api_key,
+          apiKeyLength: credentials?.api_key?.length || 0,
+          hasBaseId: !!credentials?.base_id,
+          hasTableName: !!credentials?.table_name,
+        });
+      } catch (decryptError) {
+        logger.error("❌ [ExportAirtableTool] Failed to decrypt/parse credentials", {
+          error: decryptError instanceof Error ? decryptError.message : "Unknown",
+        });
+        throw new Error("Failed to read Airtable credentials. Please reconfigure Airtable in Settings.");
+      }
+      
+      if (!credentials.api_key) {
+        logger.error("❌ [ExportAirtableTool] Credentials parsed but api_key is missing!");
+        throw new Error("Airtable API key is missing. Please reconfigure Airtable in Settings.");
+      }
       
       // Initialize Airtable
       Airtable.configure({
@@ -66,6 +103,7 @@ export const exportAirtableTool = createTool({
         baseId, 
         tableName,
         hasApiKey: !!credentials.api_key,
+        apiKeyPrefix: credentials.api_key?.substring(0, 4) || "none",
       });
       
       if (!baseId) {
