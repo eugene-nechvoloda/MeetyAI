@@ -247,6 +247,105 @@ export const mastra = new Mastra({
           };
         },
       },
+      // NEW ARCHITECTURE: Core transcript analysis API for n8n and external integrations
+      {
+        path: "/api/analyze-transcript",
+        method: "POST",
+        createHandler: async ({ mastra }) => {
+          return async (c) => {
+            const logger = mastra.getLogger();
+            logger?.info("🧠 [Analyze API] Received transcript analysis request");
+
+            try {
+              const body = await c.req.json();
+
+              // Import validation and types
+              const { validateAnalyzeRequest, validateAnalyzeResponse } = await import("../types/api");
+              const { analyzeTranscript } = await import("./services/analyzeTranscriptService");
+
+              // Validate request body
+              let request;
+              try {
+                request = validateAnalyzeRequest(body);
+              } catch (validationError) {
+                logger?.error("❌ [Analyze API] Invalid request body", {
+                  error: validationError instanceof Error ? validationError.message : "Unknown error",
+                });
+
+                return c.json({
+                  error: {
+                    code: "INVALID_REQUEST",
+                    message: "Invalid request body",
+                    details: validationError instanceof Error ? validationError.message : "Unknown error",
+                  },
+                }, 400);
+              }
+
+              logger?.info("📥 [Analyze API] Processing transcript", {
+                callId: request.callId,
+                source: request.source,
+                transcriptLength: request.transcript.length,
+                hasTopic: !!request.topic,
+              });
+
+              // Perform analysis using the unified service
+              const result = await analyzeTranscript({
+                callId: request.callId,
+                source: request.source,
+                startedAt: request.startedAt,
+                topic: request.topic,
+                transcript: request.transcript,
+                metadata: request.metadata,
+                userId: request.metadata?.slackUserId || 'api_user',
+              }, {
+                mastra,
+                logger,
+              });
+
+              // Build standardized response
+              const response = validateAnalyzeResponse({
+                callId: result.callId,
+                source: result.source,
+                context: result.context,
+                summary: result.summary,
+                insights: result.insights,
+                metadata: {
+                  processingTimeMs: result.processingTimeMs,
+                  model: "claude-sonnet-4-5",
+                  insightCount: result.insights.length,
+                  confidenceDistribution: {
+                    high: result.insights.filter(i => i.confidence >= 0.8).length,
+                    medium: result.insights.filter(i => i.confidence >= 0.5 && i.confidence < 0.8).length,
+                    low: result.insights.filter(i => i.confidence < 0.5).length,
+                  },
+                },
+              });
+
+              logger?.info("✅ [Analyze API] Analysis completed successfully", {
+                callId: response.callId,
+                insightCount: response.insights.length,
+                processingTimeMs: response.metadata?.processingTimeMs,
+              });
+
+              return c.json(response, 200);
+
+            } catch (error) {
+              logger?.error("❌ [Analyze API] Analysis failed", {
+                error: error instanceof Error ? error.message : "Unknown error",
+                stack: error instanceof Error ? error.stack : undefined,
+              });
+
+              return c.json({
+                error: {
+                  code: "ANALYSIS_FAILED",
+                  message: error instanceof Error ? error.message : "Internal server error during analysis",
+                  details: process.env.NODE_ENV === "development" && error instanceof Error ? error.stack : undefined,
+                },
+              }, 500);
+            }
+          };
+        },
+      },
       // Slack slash command: /meetyai analyze
       {
         path: "/api/slack/commands/analyze",
