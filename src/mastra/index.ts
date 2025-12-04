@@ -300,6 +300,7 @@ export const mastra = new Mastra({
               }, {
                 mastra,
                 logger,
+                sendWebhook: true, // Enable webhook for API calls
               });
 
               // Build standardized response

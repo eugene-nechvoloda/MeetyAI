@@ -98,6 +98,16 @@ export interface AnalyzeOptions {
   skipDeduplication?: boolean;
 
   /**
+   * Send results to webhook URL after analysis completes
+   */
+  sendWebhook?: boolean;
+
+  /**
+   * Custom webhook URL (overrides environment variable)
+   */
+  webhookUrl?: string;
+
+  /**
    * Mastra instance (for logging and context)
    */
   mastra?: any;
@@ -263,6 +273,30 @@ export async function analyzeTranscript(
       insightCount: result.insights.length,
       processingTimeMs: result.processingTimeMs,
     });
+
+    // Send results to webhook if configured
+    if (options.sendWebhook) {
+      const { sendWebhook, getWebhookConfig } = await import('./webhookService');
+
+      const webhookConfig = options.webhookUrl
+        ? { url: options.webhookUrl, enabled: true, retryAttempts: 3, timeout: 30000 }
+        : getWebhookConfig(logger);
+
+      if (webhookConfig.enabled && webhookConfig.url) {
+        // Send webhook asynchronously (don't block the response)
+        sendWebhook(webhookConfig, result, logger).catch((error) => {
+          logger?.error('❌ [AnalyzeTranscriptService] Webhook failed', {
+            error: error instanceof Error ? error.message : String(error),
+            callId: input.callId,
+          });
+        });
+
+        logger?.info('📤 [AnalyzeTranscriptService] Webhook dispatch initiated', {
+          url: webhookConfig.url,
+          callId: input.callId,
+        });
+      }
+    }
 
     return result;
   } catch (error) {
