@@ -1354,7 +1354,124 @@ export const mastra = new Mastra({
                     });
                     return c.json({ ok: false, error: "Failed to switch tabs" }, 500);
                   }
-                  
+
+                } else if (action.action_id === "archive_transcript") {
+                  const transcriptId = action.value;
+                  logger?.info("🗑️ [App Home] Archiving transcript", { userId, transcriptId });
+
+                  try {
+                    // Archive the transcript and its insights
+                    await prisma.transcript.update({
+                      where: { id: transcriptId },
+                      data: { archived: true },
+                    });
+
+                    // Archive all insights for this transcript
+                    await prisma.insight.updateMany({
+                      where: { transcript_id: transcriptId },
+                      data: { archived: true },
+                    });
+
+                    logger?.info("✅ [App Home] Transcript archived", { transcriptId });
+
+                    // Refresh Transcripts tab to show updated list
+                    const { buildTranscriptsTab } = await import("./ui/appHomeViews");
+                    const transcriptsView = await buildTranscriptsTab(userId);
+
+                    await slack.views.publish({
+                      user_id: userId,
+                      view: transcriptsView,
+                    });
+
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error archiving transcript", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                      transcriptId,
+                    });
+                    return c.json({ ok: false, error: "Failed to archive transcript" }, 500);
+                  }
+
+                } else if (action.action_id === "reanalyze_transcript") {
+                  const transcriptId = action.value;
+                  logger?.info("🔄 [App Home] Re-analyzing transcript", { userId, transcriptId });
+
+                  try {
+                    // Get the transcript
+                    const transcript = await prisma.transcript.findUnique({
+                      where: { id: transcriptId },
+                    });
+
+                    if (!transcript) {
+                      logger?.error("❌ [App Home] Transcript not found for re-analysis", { transcriptId });
+                      return c.json({ ok: false, error: "Transcript not found" }, 404);
+                    }
+
+                    // Archive old insights from this transcript
+                    await prisma.insight.updateMany({
+                      where: { transcript_id: transcriptId },
+                      data: { archived: true },
+                    });
+
+                    // Reset transcript status to file_uploaded
+                    await prisma.transcript.update({
+                      where: { id: transcriptId },
+                      data: {
+                        status: "file_uploaded" as any,
+                        processed_at: null,
+                      },
+                    });
+
+                    // Trigger workflow for re-analysis
+                    const threadId = `transcript/${transcriptId}/reanalysis`;
+                    const message = `Re-analyze transcript "${transcript.title}" (ID: ${transcriptId}):\n\n${transcript.transcript_text}`;
+
+                    const baseUrl = getMastraBaseUrl();
+                    const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        inputData: {
+                          message,
+                          threadId,
+                          slackUserId: userId,
+                          slackChannel: userId,
+                          threadTs: undefined,
+                          transcriptId: transcriptId,
+                        },
+                      }),
+                    });
+
+                    if (!workflowResponse.ok) {
+                      throw new Error(`Workflow start failed: ${workflowResponse.statusText}`);
+                    }
+
+                    logger?.info("✅ [App Home] Re-analysis workflow started", { transcriptId });
+
+                    // Refresh Transcripts tab to show analyzing status
+                    const { buildTranscriptsTab } = await import("./ui/appHomeViews");
+                    const transcriptsView = await buildTranscriptsTab(userId);
+
+                    await slack.views.publish({
+                      user_id: userId,
+                      view: transcriptsView,
+                    });
+
+                    // Send confirmation message
+                    await slack.chat.postMessage({
+                      channel: userId,
+                      text: `🔄 Re-analyzing transcript: *${transcript.title}*\n\nI'll send you the updated insights when the analysis completes.`,
+                    });
+
+                    return c.json({ ok: true });
+                  } catch (error) {
+                    logger?.error("❌ [App Home] Error re-analyzing transcript", {
+                      error: error instanceof Error ? error.message : "Unknown error",
+                      transcriptId,
+                    });
+                    return c.json({ ok: false, error: "Failed to re-analyze transcript" }, 500);
+                  }
+
                 } else if (action.action_id === "view_transcript_insights") {
                   const transcriptId = action.value;
                   logger?.info("🔍 [App Home] Viewing insights for transcript", { userId, transcriptId });
