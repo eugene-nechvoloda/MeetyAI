@@ -152,7 +152,7 @@ export async function buildHomeTab(userId: string) {
               type: "plain_text",
               text: "⚙️ Settings",
             },
-            action_id: "open_export_settings",
+            action_id: "open_general_settings",
           },
         ],
       },
@@ -717,64 +717,12 @@ export async function buildExportSettingsModal(userId: string) {
     },
     blocks: [
       {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: "Export Destinations",
-        },
-      },
-      {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*Linear* ${linearConfig?.enabled ? "✅ Connected" : "⚪ Not configured"}\nExport insights as Linear issues`,
-        },
-        accessory: {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: linearConfig ? "Edit" : "Configure",
-          },
-          action_id: "configure_linear",
+          text: "ℹ️ *Export Settings Moved*\n\nInsight exports to Linear and Airtable are now handled by your n8n workflow. Configure export destinations in your n8n automation instead of here.\n\nFor setup instructions, see the n8n integration documentation.",
         },
       },
-      ...(linearConfig?.enabled ? [{
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: "📋 Edit Field Mapping" },
-            action_id: `edit_mapping_${linearConfig.id}`,
-            value: linearConfig.id,
-          },
-        ],
-      }] : []),
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*Airtable* ${airtableConfig?.enabled ? "✅ Connected" : "⚪ Not configured"}\nExport insights to Airtable base`,
-        },
-        accessory: {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: airtableConfig ? "Edit" : "Configure",
-          },
-          action_id: "configure_airtable",
-        },
-      },
-      ...(airtableConfig?.enabled ? [{
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: "📋 Edit Field Mapping" },
-            action_id: `edit_mapping_${airtableConfig.id}`,
-            value: airtableConfig.id,
-          },
-        ],
-      }] : []),
       {
         type: "divider",
       },

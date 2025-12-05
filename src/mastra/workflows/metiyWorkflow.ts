@@ -135,7 +135,27 @@ const sendReplyStep = createStep({
       logger?.info("✅ [MeetyAI Workflow Step 2] Slack reply sent", {
         messageTs: result.ts,
       });
-      
+
+      // Refresh App Home to show updated transcript status
+      if (slackUserId) {
+        try {
+          const { buildHomeTab } = await import("../ui/appHomeViews");
+          const homeView = await buildHomeTab(slackUserId);
+
+          await slack.views.publish({
+            user_id: slackUserId,
+            view: homeView,
+          });
+
+          logger?.info("✅ [MeetyAI Workflow Step 2] App Home refreshed", { slackUserId });
+        } catch (refreshError) {
+          logger?.warn("⚠️ [MeetyAI Workflow Step 2] Failed to refresh App Home", {
+            error: refreshError instanceof Error ? refreshError.message : String(refreshError),
+          });
+          // Don't fail the workflow if App Home refresh fails
+        }
+      }
+
       return {
         response,
         sent: true,
