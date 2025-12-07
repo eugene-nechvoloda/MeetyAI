@@ -1129,17 +1129,27 @@ export const mastra = new Mastra({
                   return c.json({ ok: true });
                   
                 } else if (action.action_id === "open_general_settings") {
-                  // Get existing user settings
-                  const userSettings = await prisma.userSetting.findUnique({
+                  // Get existing system instructions (examples)
+                  const systemInstructions = await prisma.systemInstruction.findMany({
+                    where: { user_id: userId, enabled: true },
+                  });
+
+                  // Combine all examples into one text field
+                  const existingExamples = systemInstructions
+                    .map((si) => `[${si.category}]\n${si.examples}`)
+                    .join("\n\n");
+
+                  // Get existing export configs
+                  const exportConfigs = await prisma.exportConfig.findMany({
                     where: { user_id: userId },
                   });
-                  
+
                   await slack.views.open({
                     trigger_id: payload.trigger_id,
                     view: {
                       type: "modal",
-                      callback_id: "general_settings_modal",
-                      title: { type: "plain_text", text: "General Settings" },
+                      callback_id: "settings_modal",
+                      title: { type: "plain_text", text: "Settings" },
                       submit: { type: "plain_text", text: "Save" },
                       close: { type: "plain_text", text: "Cancel" },
                       blocks: [
@@ -1147,7 +1157,119 @@ export const mastra = new Mastra({
                           type: "section",
                           text: {
                             type: "mrkdwn",
-                            text: "*General Preferences*",
+                            text: "*⚙️ MeetyAI Settings*",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*📝 Examples*\nProvide examples of what to look for when analyzing transcripts. These examples will guide the AI in extracting insights.",
+                          },
+                        },
+                        {
+                          type: "input",
+                          block_id: "examples_input",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "examples",
+                            multiline: true,
+                            placeholder: {
+                              type: "plain_text",
+                              text: "Examples:\n- Pain points: \"Users struggle with...\"\n- Opportunities: \"We could improve...\"\n- Hidden requests: \"Customers mentioned...\"",
+                            },
+                            initial_value: existingExamples || "",
+                          },
+                          label: { type: "plain_text", text: "Examples for Insight Extraction" },
+                          optional: true,
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*🔗 Knowledge Base (MCP)*\nConfigure MCP integration with external sources like Linear or ProductBoard for additional context.",
+                          },
+                        },
+                        {
+                          type: "actions",
+                          elements: [
+                            {
+                              type: "button",
+                              text: { type: "plain_text", text: "Configure Knowledge Sources" },
+                              action_id: "configure_knowledge_base",
+                              style: "primary",
+                            },
+                          ],
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*📤 Export Options*\nConfigure where to export insights (Airtable, Notion, Google Sheets).",
+                          },
+                        },
+                        {
+                          type: "actions",
+                          elements: [
+                            {
+                              type: "button",
+                              text: { type: "plain_text", text: "Add Export Destination" },
+                              action_id: "add_export_destination",
+                              style: "primary",
+                            },
+                          ],
+                        },
+                        ...(exportConfigs.length > 0
+                          ? [
+                              {
+                                type: "section" as const,
+                                text: {
+                                  type: "mrkdwn" as const,
+                                  text: `*Current Export Destinations:*\n${exportConfigs
+                                    .map(
+                                      (ec) =>
+                                        `• ${ec.label} (${ec.provider}) ${ec.enabled ? "✅" : "❌"}`
+                                    )
+                                    .join("\n")}`,
+                                },
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  });
+
+                  return c.json({ ok: true });
+
+                } else if (action.action_id === "configure_knowledge_base") {
+                  // Open Knowledge Base configuration modal
+                  const knowledgeSources = await prisma.knowledgeSource.findMany({
+                    where: { user_id: userId },
+                  });
+
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "knowledge_base_modal",
+                      title: { type: "plain_text", text: "Knowledge Base" },
+                      submit: { type: "plain_text", text: "Save" },
+                      close: { type: "plain_text", text: "Cancel" },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*🔗 MCP Integration Setup*\nConfigure Model Context Protocol (MCP) integration with external sources.",
                           },
                         },
                         {
@@ -1155,61 +1277,158 @@ export const mastra = new Mastra({
                         },
                         {
                           type: "input",
-                          block_id: "research_depth",
+                          block_id: "source_type",
                           element: {
                             type: "static_select",
-                            action_id: "depth",
-                            placeholder: { type: "plain_text", text: "Select analysis depth" },
+                            action_id: "type",
+                            placeholder: { type: "plain_text", text: "Select source type" },
                             options: [
-                              { text: { type: "plain_text", text: "Quick (0.3) - Fast, fewer insights" }, value: "0.3" },
-                              { text: { type: "plain_text", text: "Standard (0.5) - Balanced" }, value: "0.5" },
-                              { text: { type: "plain_text", text: "Deep (0.7) - Thorough, more insights" }, value: "0.7" },
-                              { text: { type: "plain_text", text: "Maximum (1.0) - Most thorough" }, value: "1.0" },
+                              { text: { type: "plain_text", text: "Linear" }, value: "mcp_linear" },
+                              { text: { type: "plain_text", text: "ProductBoard" }, value: "mcp_productboard" },
                             ],
-                            initial_option: { text: { type: "plain_text", text: `Deep (${userSettings?.research_depth || 0.7})` }, value: String(userSettings?.research_depth || 0.7) },
                           },
-                          label: { type: "plain_text", text: "Research Depth" },
+                          label: { type: "plain_text", text: "Source Type" },
                         },
                         {
                           type: "input",
-                          block_id: "auto_approve",
+                          block_id: "source_label",
                           element: {
-                            type: "radio_buttons",
-                            action_id: "approve",
-                            options: [
-                              { text: { type: "plain_text", text: "Auto-approve insights" }, value: "true" },
-                              { text: { type: "plain_text", text: "Manual approval required" }, value: "false" },
-                            ],
-                            initial_option: userSettings?.auto_approve
-                              ? { text: { type: "plain_text", text: "Auto-approve insights" }, value: "true" }
-                              : { text: { type: "plain_text", text: "Manual approval required" }, value: "false" },
+                            type: "plain_text_input",
+                            action_id: "label",
+                            placeholder: { type: "plain_text", text: "e.g., My Linear Workspace" },
                           },
-                          label: { type: "plain_text", text: "Insight Approval" },
+                          label: { type: "plain_text", text: "Label" },
                         },
                         {
                           type: "input",
-                          block_id: "notifications",
+                          block_id: "mcp_server_url",
                           element: {
-                            type: "checkboxes",
-                            action_id: "notif",
-                            options: [
-                              { text: { type: "plain_text", text: "Notify on analysis completion" }, value: "completion" },
-                              { text: { type: "plain_text", text: "Notify on failures" }, value: "failure" },
-                            ],
-                            initial_options: [
-                              { text: { type: "plain_text", text: "Notify on analysis completion" }, value: "completion" },
-                              { text: { type: "plain_text", text: "Notify on failures" }, value: "failure" },
-                            ],
+                            type: "plain_text_input",
+                            action_id: "url",
+                            placeholder: { type: "plain_text", text: "https://mcp.example.com" },
                           },
-                          label: { type: "plain_text", text: "Notifications" },
+                          label: { type: "plain_text", text: "MCP Server URL" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "api_key",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "key",
+                            placeholder: { type: "plain_text", text: "Your API key" },
+                          },
+                          label: { type: "plain_text", text: "API Key" },
                           optional: true,
+                        },
+                        ...(knowledgeSources.length > 0
+                          ? [
+                              {
+                                type: "divider" as const,
+                              },
+                              {
+                                type: "section" as const,
+                                text: {
+                                  type: "mrkdwn" as const,
+                                  text: `*Configured Sources:*\n${knowledgeSources
+                                    .map((ks) => `• ${ks.label} (${ks.source_type}) ${ks.enabled ? "✅" : "❌"}`)
+                                    .join("\n")}`,
+                                },
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  });
+
+                  return c.json({ ok: true });
+
+                } else if (action.action_id === "add_export_destination") {
+                  // Open Export Destination configuration modal
+                  await slack.views.open({
+                    trigger_id: payload.trigger_id,
+                    view: {
+                      type: "modal",
+                      callback_id: "export_destination_modal",
+                      title: { type: "plain_text", text: "Export Destination" },
+                      submit: { type: "plain_text", text: "Save" },
+                      close: { type: "plain_text", text: "Cancel" },
+                      blocks: [
+                        {
+                          type: "section",
+                          text: {
+                            type: "mrkdwn",
+                            text: "*📤 Add Export Destination*\nConfigure where to export insights.",
+                          },
+                        },
+                        {
+                          type: "divider",
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_provider",
+                          element: {
+                            type: "static_select",
+                            action_id: "provider",
+                            placeholder: { type: "plain_text", text: "Select provider" },
+                            options: [
+                              { text: { type: "plain_text", text: "Airtable" }, value: "airtable" },
+                              { text: { type: "plain_text", text: "Notion" }, value: "notion" },
+                              { text: { type: "plain_text", text: "Google Sheets" }, value: "google_sheets" },
+                            ],
+                          },
+                          label: { type: "plain_text", text: "Provider" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "export_label",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "label",
+                            placeholder: { type: "plain_text", text: "e.g., Customer Insights Base" },
+                          },
+                          label: { type: "plain_text", text: "Label" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "api_endpoint",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "endpoint",
+                            placeholder: { type: "plain_text", text: "API endpoint URL" },
+                          },
+                          label: { type: "plain_text", text: "API Endpoint" },
+                          optional: true,
+                        },
+                        {
+                          type: "input",
+                          block_id: "client_id",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "client_id",
+                            placeholder: { type: "plain_text", text: "Client ID or API Key" },
+                          },
+                          label: { type: "plain_text", text: "Client ID / API Key" },
+                        },
+                        {
+                          type: "input",
+                          block_id: "resource_id",
+                          element: {
+                            type: "plain_text_input",
+                            action_id: "resource",
+                            placeholder: { type: "plain_text", text: "Base ID, Database ID, or Sheet ID" },
+                          },
+                          label: { type: "plain_text", text: "Resource ID" },
+                          hint: {
+                            type: "plain_text",
+                            text: "Airtable: Base ID | Notion: Database ID | Google Sheets: Spreadsheet ID",
+                          },
                         },
                       ],
                     },
                   });
-                  
+
                   return c.json({ ok: true });
-                  
+
                 } else if (action.action_id === "open_upload_modal") {
                   logger?.info("📤 [App Home] Opening upload modal", { userId });
                   
@@ -2138,37 +2357,149 @@ export const mastra = new Mastra({
                   logger?.info("✅ [MeetyAI Modal] Export config saved", { provider, enabled });
                   return c.json({ response_action: "clear" });
                   
-                } else if (callbackId === "general_settings_modal") {
-                  // Handle general settings submission
+                } else if (callbackId === "settings_modal") {
+                  // Handle new settings submission
                   const { getPrisma } = await import("./utils/database");
                   const prisma = getPrisma();
-                  
-                  const researchDepth = parseFloat(values.research_depth?.depth?.selected_option?.value || "0.7");
-                  const autoApprove = values.auto_approve?.approve?.selected_option?.value === "true";
-                  const notifications = values.notifications?.notif?.selected_options?.map((o: any) => o.value) || [];
-                  
-                  await prisma.userSetting.upsert({
-                    where: { user_id: userId },
-                    create: {
+
+                  // Get examples text
+                  const examplesText = values.examples_input?.examples?.value?.trim();
+
+                  if (examplesText) {
+                    // Delete old system instructions
+                    await prisma.systemInstruction.deleteMany({
+                      where: { user_id: userId },
+                    });
+
+                    // Parse and save new examples
+                    // Examples format: "[category]\nexamples text\n\n[category2]\nexamples text2"
+                    const sections = examplesText.split(/\n\n+/);
+
+                    for (const section of sections) {
+                      const lines = section.trim().split("\n");
+                      if (lines.length === 0) continue;
+
+                      let category = "custom";
+                      let examples = section;
+
+                      // Check if first line is a category (format: [category])
+                      const categoryMatch = lines[0].match(/^\[(.+)\]$/);
+                      if (categoryMatch) {
+                        category = categoryMatch[1].toLowerCase().replace(/\s+/g, "_");
+                        examples = lines.slice(1).join("\n").trim();
+                      }
+
+                      if (examples) {
+                        await prisma.systemInstruction.create({
+                          data: {
+                            user_id: userId,
+                            category,
+                            examples,
+                            enabled: true,
+                          },
+                        });
+                      }
+                    }
+
+                    logger?.info("✅ [Settings Modal] System instructions saved", {
+                      userId,
+                      sectionCount: sections.length,
+                    });
+                  }
+
+                  return c.json({ response_action: "clear" });
+
+                } else if (callbackId === "knowledge_base_modal") {
+                  // Handle Knowledge Base configuration submission
+                  const { getPrisma } = await import("./utils/database");
+                  const { encrypt } = await import("./utils/encryption");
+                  const prisma = getPrisma();
+
+                  const sourceType = values.source_type?.type?.selected_option?.value;
+                  const label = values.source_label?.label?.value;
+                  const mcpServerUrl = values.mcp_server_url?.url?.value;
+                  const apiKey = values.api_key?.key?.value;
+
+                  if (!sourceType || !label || !mcpServerUrl) {
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        source_type: !sourceType ? "Please select source type" : undefined,
+                        source_label: !label ? "Please provide a label" : undefined,
+                        mcp_server_url: !mcpServerUrl ? "Please provide MCP server URL" : undefined,
+                      },
+                    });
+                  }
+
+                  const authEncrypted = apiKey ? encrypt(JSON.stringify({ api_key: apiKey })) : "";
+
+                  await prisma.knowledgeSource.create({
+                    data: {
                       user_id: userId,
-                      research_depth: researchDepth,
-                      auto_approve: autoApprove,
-                      notify_on_completion: notifications.includes("completion"),
-                      notify_on_failure: notifications.includes("failure"),
-                    },
-                    update: {
-                      research_depth: researchDepth,
-                      auto_approve: autoApprove,
-                      notify_on_completion: notifications.includes("completion"),
-                      notify_on_failure: notifications.includes("failure"),
+                      source_type: sourceType,
+                      label,
+                      mcp_server_url: mcpServerUrl,
+                      auth_encrypted: authEncrypted,
+                      enabled: true,
+                      mcp_config: {},
                     },
                   });
-                  
-                  logger?.info("✅ [MeetyAI Modal] General settings saved");
+
+                  logger?.info("✅ [Knowledge Base Modal] Source saved", { userId, sourceType, label });
+                  return c.json({ response_action: "clear" });
+
+                } else if (callbackId === "export_destination_modal") {
+                  // Handle Export Destination configuration submission
+                  const { getPrisma } = await import("./utils/database");
+                  const { encrypt } = await import("./utils/encryption");
+                  const prisma = getPrisma();
+
+                  const provider = values.export_provider?.provider?.selected_option?.value;
+                  const label = values.export_label?.label?.value;
+                  const apiEndpoint = values.api_endpoint?.endpoint?.value;
+                  const clientId = values.client_id?.client_id?.value;
+                  const resourceId = values.resource_id?.resource?.value;
+
+                  if (!provider || !label || !clientId || !resourceId) {
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        export_provider: !provider ? "Please select a provider" : undefined,
+                        export_label: !label ? "Please provide a label" : undefined,
+                        client_id: !clientId ? "Please provide Client ID / API Key" : undefined,
+                        resource_id: !resourceId ? "Please provide Resource ID" : undefined,
+                      },
+                    });
+                  }
+
+                  const credentials = { api_key: clientId };
+                  const encryptedCreds = encrypt(JSON.stringify(credentials));
+
+                  // Determine which field to use based on provider
+                  const providerFields: any = {
+                    airtable: { base_id: resourceId },
+                    notion: { database_id: resourceId },
+                    google_sheets: { sheet_id: resourceId },
+                  };
+
+                  await prisma.exportConfig.create({
+                    data: {
+                      user_id: userId,
+                      provider,
+                      label,
+                      enabled: true,
+                      credentials_encrypted: encryptedCreds,
+                      api_endpoint: apiEndpoint || null,
+                      ...providerFields[provider],
+                      field_mapping: {}, // Empty initially - will be configured later
+                    },
+                  });
+
+                  logger?.info("✅ [Export Destination Modal] Destination saved", { userId, provider, label });
                   return c.json({ response_action: "clear" });
                 }
               }
-              
+
               return c.text("OK", 200);
               
             } catch (error) {
