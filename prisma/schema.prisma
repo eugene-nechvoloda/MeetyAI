@@ -242,39 +242,44 @@ model ImportSource {
   @@index([enabled])
 }
 
-// Export destination configurations (Airtable, Linear, Jira)
+// Export destination configurations (Airtable, Notion, Google Sheets, Linear, Jira)
 model ExportConfig {
   id          String    @id @default(uuid())
   user_id     String    // Slack user ID
-  
-  provider    String    // airtable, linear, jira
+
+  provider    String    // airtable, notion, google_sheets, linear, jira
   label       String
   enabled     Boolean   @default(true)
-  
+
   // Connection credentials (encrypted)
   credentials_encrypted String
-  
+
   // Provider-specific config
-  base_id     String?   // Airtable
-  table_name  String?   // Airtable
-  team_id     String?   // Linear
-  project_id  String?   // Jira
-  
+  base_id     String?   // Airtable base ID
+  table_name  String?   // Airtable table name
+  team_id     String?   // Linear team ID
+  project_id  String?   // Jira project ID
+  database_id String?   // Notion database ID
+  sheet_id    String?   // Google Sheets spreadsheet ID
+
+  // API endpoint (for custom integrations)
+  api_endpoint String?  // Custom API endpoint URL
+
   // Field mapping
   field_mapping Json    // { local_field: remote_field }
-  
+
   // Filters
   min_confidence Float?
   types_filter   String[] @default([])
   exclude_duplicates Boolean @default(true)
-  
+
   // Test status
   last_tested DateTime?
   test_status Boolean?
-  
+
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
-  
+
   @@index([user_id])
   @@index([provider])
   @@index([enabled])
@@ -284,49 +289,73 @@ model ExportConfig {
 model KnowledgeSource {
   id          String    @id @default(uuid())
   user_id     String    // Slack user ID
-  
-  source_type String    // helpdesk, website, file, cloud_link
+
+  source_type String    // helpdesk, website, file, cloud_link, mcp_linear, mcp_productboard
   label       String
   enabled     Boolean   @default(true)
-  
+
   // Source location
   url         String?
   file_path   String?
-  
+
   // Auth credentials (if needed, encrypted)
   auth_encrypted String?
-  
+
+  // MCP-specific configuration
+  mcp_server_url String? // MCP server endpoint
+  mcp_config     Json?   // MCP-specific configuration
+
   // Indexing metadata
   indexed     Boolean   @default(false)
   indexed_at  DateTime?
   chunk_count Int       @default(0)
-  
+
   // Pinecone namespace
   pinecone_namespace String?
-  
+
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
-  
+
   @@index([user_id])
   @@index([source_type])
   @@index([enabled])
   @@index([indexed])
 }
 
+// System instructions and examples for LLM context
+model SystemInstruction {
+  id          String    @id @default(uuid())
+  user_id     String    // Slack user ID
+
+  // Instruction content
+  category    String    // pain_points, opportunities, hidden_requests, custom
+  examples    String    @db.Text // User-provided examples
+
+  // Metadata
+  enabled     Boolean   @default(true)
+
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@index([user_id])
+  @@index([category])
+  @@index([enabled])
+}
+
 // User settings and preferences
 model UserSetting {
   id          String    @id @default(uuid())
   user_id     String    @unique // Slack user ID
-  
+
   // Preferences
   research_depth Float   @default(0.7)
   temperature    Float   @default(0.35)
   auto_approve   Boolean @default(false)
-  
+
   // Notification preferences
   notify_on_completion Boolean @default(true)
   notify_on_failure    Boolean @default(true)
-  
+
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
 }
