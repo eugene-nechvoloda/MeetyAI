@@ -1130,9 +1130,14 @@ export const mastra = new Mastra({
                   
                 } else if (action.action_id === "open_general_settings") {
                   // Get existing system instructions (examples)
-                  const systemInstructions = await prisma.systemInstruction.findMany({
-                    where: { user_id: userId, enabled: true },
-                  });
+                  let systemInstructions: any[] = [];
+                  try {
+                    systemInstructions = await prisma.systemInstruction.findMany({
+                      where: { user_id: userId, enabled: true },
+                    });
+                  } catch (error) {
+                    logger?.warn("SystemInstruction table not found, using empty defaults", { error });
+                  }
 
                   // Combine all examples into one text field
                   const existingExamples = systemInstructions
@@ -2117,7 +2122,7 @@ export const mastra = new Mastra({
                   // Handle transcript analysis submission
                   const transcriptText = values.transcript_text_block?.transcript_text?.value;
                   const transcriptLink = values.transcript_link_block?.transcript_link?.value;
-                  
+
                   if (!transcriptText && !transcriptLink) {
                     return c.json({
                       response_action: "errors",
@@ -2126,38 +2131,46 @@ export const mastra = new Mastra({
                       },
                     });
                   }
-                  
-                  // Start analysis workflow via HTTP endpoint (proper Inngest context)
-                  const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
-                  const threadId = `slack-modal/${Date.now()}`;
-                  const baseUrl = getMastraBaseUrl();
-                  
-                  const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      inputData: {
-                        message,
-                        threadId,
-                        slackUserId: userId,
-                        slackChannel: userId, // DM
-                        threadTs: undefined,
+
+                  // Use the shared ingestion service
+                  const { ingestTranscript } = await import("./services/transcriptIngestion");
+                  const { TranscriptOrigin } = await import("@prisma/client");
+
+                  const content = transcriptText || transcriptLink || "";
+                  const origin = transcriptLink ? TranscriptOrigin.link : TranscriptOrigin.paste;
+                  const title = `Analysis from Slack - ${new Date().toLocaleDateString()}`;
+
+                  const result = await ingestTranscript({
+                    title,
+                    content,
+                    origin,
+                    slackUserId: userId,
+                    slackChannelId: userId,
+                    metadata: {
+                      linkUrl: transcriptLink,
+                    },
+                  }, logger);
+
+                  if (!result.success) {
+                    logger?.error("❌ [MeetyAI Modal] Ingestion failed", { error: result.error });
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        transcript_text_block: result.error || "Failed to process transcript",
                       },
-                    }),
-                  });
-                  
-                  if (!workflowResponse.ok) {
-                    logger?.error("❌ [MeetyAI Modal] Workflow start failed", { status: workflowResponse.status });
+                    });
                   }
-                  
-                  logger?.info("✅ [MeetyAI Modal] Analysis started via HTTP");
+
+                  logger?.info("✅ [MeetyAI Modal] Transcript ingested and workflow started", {
+                    transcriptId: result.transcriptId,
+                  });
                   return c.json({ response_action: "clear" });
                   
                 } else if (callbackId === "upload_transcript_modal") {
                   // Handle upload transcript modal submission (from App Home)
                   const transcriptText = values.transcript_text_block?.transcript_text?.value;
                   const transcriptLink = values.transcript_link_block?.transcript_link?.value;
-                  
+
                   if (!transcriptText && !transcriptLink) {
                     return c.json({
                       response_action: "errors",
@@ -2166,36 +2179,44 @@ export const mastra = new Mastra({
                       },
                     });
                   }
-                  
+
                   logger?.info("📤 [App Home Upload] Processing transcript submission", {
                     hasText: !!transcriptText,
                     hasLink: !!transcriptLink,
                   });
-                  
-                  // Start analysis workflow via HTTP endpoint (proper Inngest context)
-                  const message = transcriptText || `Please analyze the transcript at: ${transcriptLink}`;
-                  const threadId = `slack-app-home/${Date.now()}`;
-                  const baseUrl = getMastraBaseUrl();
-                  
-                  const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      inputData: {
-                        message,
-                        threadId,
-                        slackUserId: userId,
-                        slackChannel: userId, // DM
-                        threadTs: undefined,
+
+                  // Use the shared ingestion service
+                  const { ingestTranscript } = await import("./services/transcriptIngestion");
+                  const { TranscriptOrigin } = await import("@prisma/client");
+
+                  const content = transcriptText || transcriptLink || "";
+                  const origin = transcriptLink ? TranscriptOrigin.link : TranscriptOrigin.paste;
+                  const title = `Upload from App Home - ${new Date().toLocaleDateString()}`;
+
+                  const result = await ingestTranscript({
+                    title,
+                    content,
+                    origin,
+                    slackUserId: userId,
+                    slackChannelId: userId,
+                    metadata: {
+                      linkUrl: transcriptLink,
+                    },
+                  }, logger);
+
+                  if (!result.success) {
+                    logger?.error("❌ [App Home Upload] Ingestion failed", { error: result.error });
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        transcript_text_block: result.error || "Failed to process transcript",
                       },
-                    }),
-                  });
-                  
-                  if (!workflowResponse.ok) {
-                    logger?.error("❌ [App Home Upload] Workflow start failed", { status: workflowResponse.status });
+                    });
                   }
-                  
-                  logger?.info("✅ [App Home Upload] Analysis workflow started via HTTP");
+
+                  logger?.info("✅ [App Home Upload] Transcript ingested and workflow started", {
+                    transcriptId: result.transcriptId,
+                  });
                   return c.json({ response_action: "clear" });
                   
                 } else if (callbackId === "meetyai_settings_modal") {
@@ -2366,45 +2387,50 @@ export const mastra = new Mastra({
                   const examplesText = values.examples_input?.examples?.value?.trim();
 
                   if (examplesText) {
-                    // Delete old system instructions
-                    await prisma.systemInstruction.deleteMany({
-                      where: { user_id: userId },
-                    });
+                    try {
+                      // Delete old system instructions
+                      await prisma.systemInstruction.deleteMany({
+                        where: { user_id: userId },
+                      });
 
-                    // Parse and save new examples
-                    // Examples format: "[category]\nexamples text\n\n[category2]\nexamples text2"
-                    const sections = examplesText.split(/\n\n+/);
+                      // Parse and save new examples
+                      // Examples format: "[category]\nexamples text\n\n[category2]\nexamples text2"
+                      const sections = examplesText.split(/\n\n+/);
 
-                    for (const section of sections) {
-                      const lines = section.trim().split("\n");
-                      if (lines.length === 0) continue;
+                      for (const section of sections) {
+                        const lines = section.trim().split("\n");
+                        if (lines.length === 0) continue;
 
-                      let category = "custom";
-                      let examples = section;
+                        let category = "custom";
+                        let examples = section;
 
-                      // Check if first line is a category (format: [category])
-                      const categoryMatch = lines[0].match(/^\[(.+)\]$/);
-                      if (categoryMatch) {
-                        category = categoryMatch[1].toLowerCase().replace(/\s+/g, "_");
-                        examples = lines.slice(1).join("\n").trim();
+                        // Check if first line is a category (format: [category])
+                        const categoryMatch = lines[0].match(/^\[(.+)\]$/);
+                        if (categoryMatch) {
+                          category = categoryMatch[1].toLowerCase().replace(/\s+/g, "_");
+                          examples = lines.slice(1).join("\n").trim();
+                        }
+
+                        if (examples) {
+                          await prisma.systemInstruction.create({
+                            data: {
+                              user_id: userId,
+                              category,
+                              examples,
+                              enabled: true,
+                            },
+                          });
+                        }
                       }
 
-                      if (examples) {
-                        await prisma.systemInstruction.create({
-                          data: {
-                            user_id: userId,
-                            category,
-                            examples,
-                            enabled: true,
-                          },
-                        });
-                      }
+                      logger?.info("✅ [Settings Modal] System instructions saved", {
+                        userId,
+                        sectionCount: sections.length,
+                      });
+                    } catch (error) {
+                      logger?.error("❌ [Settings Modal] Failed to save system instructions", { error });
+                      // Continue even if SystemInstruction table doesn't exist yet
                     }
-
-                    logger?.info("✅ [Settings Modal] System instructions saved", {
-                      userId,
-                      sectionCount: sections.length,
-                    });
                   }
 
                   return c.json({ response_action: "clear" });
