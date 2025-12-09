@@ -56,9 +56,16 @@ const PORT = parseInt(process.env.PORT || '5000', 10);
 
 async function start() {
   try {
-    await slack.start(PORT);
-    logger.info(`⚡️ MeetyAI server is running on port ${PORT}`);
-    logger.info(`🎯 Simplified architecture - No Mastra, No Inngest`);
+    // When using ExpressReceiver, start the Express app directly
+    await new Promise<void>((resolve, reject) => {
+      const server = app.listen(PORT, () => {
+        logger.info(`⚡️ MeetyAI server is running on port ${PORT}`);
+        logger.info(`🎯 Simplified architecture - No Mastra, No Inngest`);
+        resolve();
+      });
+
+      server.on('error', reject);
+    });
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
