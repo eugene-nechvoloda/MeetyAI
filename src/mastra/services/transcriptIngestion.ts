@@ -119,30 +119,29 @@ export async function ingestTranscript(
 
           const threadId = `transcript/${existingTranscript.id}`;
           const message = `Process transcript "${existingTranscript.title}" (ID: ${existingTranscript.id}):\n\n${input.content}`;
-          
-          // Trigger workflow via HTTP endpoint (proper Inngest context)
-          const baseUrl = getMastraBaseUrl();
-          const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              inputData: {
-                message,
-                threadId,
-                slackUserId: input.slackUserId,
-                slackChannel: input.slackChannelId || input.slackUserId,
-                threadTs: undefined,
-                transcriptId: existingTranscript.id,
-              },
-            }),
+
+          // Import and execute workflow directly
+          const { metiyWorkflow } = await import("../workflows/metiyWorkflow");
+
+          // Execute workflow with proper input data
+          metiyWorkflow.execute({
+            inputData: {
+              message,
+              threadId,
+              slackUserId: input.slackUserId,
+              slackChannel: input.slackChannelId || input.slackUserId,
+              threadTs: undefined,
+              transcriptId: existingTranscript.id,
+            },
+          }).catch((err: Error) => {
+            logger?.error("⚠️ [TranscriptIngestion] Workflow execution error for existing transcript", {
+              error: err.message,
+              transcriptId: existingTranscript.id,
+            });
           });
 
-          if (!workflowResponse.ok) {
-            throw new Error(`Workflow start failed: ${workflowResponse.statusText}`);
-          }
-
           workflowStarted = true;
-          logger?.info("✅ [TranscriptIngestion] Workflow triggered for existing transcript via HTTP", {
+          logger?.info("✅ [TranscriptIngestion] Workflow triggered for existing transcript directly", {
             transcriptId: existingTranscript.id,
             threadId,
           });
@@ -214,36 +213,35 @@ export async function ingestTranscript(
 
     if (!input.skipWorkflow) {
       try {
-        logger?.info("🚀 [TranscriptIngestion] Triggering metiyWorkflow", {
+        logger?.info("🚀 [TranscriptIngestion] Triggering metiyWorkflow directly", {
           transcriptId: transcript.id,
         });
 
         const threadId = `transcript/${transcript.id}`;
         const message = `Process transcript "${transcript.title}" (ID: ${transcript.id}):\n\n${input.content}`;
-        
-        // Trigger workflow via HTTP endpoint (proper Inngest context)
-        const baseUrl = getMastraBaseUrl();
-        const workflowResponse = await fetch(`${baseUrl}/api/workflows/metiyWorkflow/start`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            inputData: {
-              message,
-              threadId,
-              slackUserId: input.slackUserId,
-              slackChannel: input.slackChannelId || input.slackUserId,
-              threadTs: undefined,
-              transcriptId: transcript.id,
-            },
-          }),
+
+        // Import and execute workflow directly
+        const { metiyWorkflow } = await import("../workflows/metiyWorkflow");
+
+        // Execute workflow with proper input data
+        metiyWorkflow.execute({
+          inputData: {
+            message,
+            threadId,
+            slackUserId: input.slackUserId,
+            slackChannel: input.slackChannelId || input.slackUserId,
+            threadTs: undefined,
+            transcriptId: transcript.id,
+          },
+        }).catch((err: Error) => {
+          logger?.error("⚠️ [TranscriptIngestion] Workflow execution error", {
+            error: err.message,
+            transcriptId: transcript.id,
+          });
         });
 
-        if (!workflowResponse.ok) {
-          throw new Error(`Workflow start failed: ${workflowResponse.statusText}`);
-        }
-
         workflowStarted = true;
-        logger?.info("✅ [TranscriptIngestion] Workflow started via HTTP", {
+        logger?.info("✅ [TranscriptIngestion] Workflow started directly", {
           transcriptId: transcript.id,
           threadId,
         });
