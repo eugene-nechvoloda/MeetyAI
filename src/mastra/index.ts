@@ -2170,28 +2170,84 @@ export const mastra = new Mastra({
                   // Handle upload transcript modal submission (from App Home)
                   const transcriptText = values.transcript_text_block?.transcript_text?.value;
                   const transcriptLink = values.transcript_link_block?.transcript_link?.value;
-
-                  if (!transcriptText && !transcriptLink) {
-                    return c.json({
-                      response_action: "errors",
-                      errors: {
-                        transcript_text_block: "Please provide either text or a link",
-                      },
-                    });
-                  }
+                  const transcriptTitle = values.title_input?.title?.value || `Upload from App Home - ${new Date().toLocaleDateString()}`;
+                  const fileIds = values.file_input?.file_input?.files;
 
                   logger?.info("📤 [App Home Upload] Processing transcript submission", {
                     hasText: !!transcriptText,
                     hasLink: !!transcriptLink,
+                    hasFile: !!fileIds && fileIds.length > 0,
                   });
+
+                  let content = "";
+                  let origin: any;
+                  let fileName: string | undefined;
+
+                  // Priority: File > Text > Link
+                  if (fileIds && fileIds.length > 0) {
+                    // Handle file upload
+                    try {
+                      const fileId = fileIds[0].id;
+                      logger?.info("📄 [App Home Upload] Downloading file", { fileId });
+
+                      const fileInfo = await slack.files.info({ file: fileId });
+                      if (!fileInfo.file) {
+                        throw new Error("File not found");
+                      }
+
+                      fileName = fileInfo.file.name;
+                      const fileUrl = fileInfo.file.url_private_download;
+
+                      if (!fileUrl) {
+                        throw new Error("File download URL not available");
+                      }
+
+                      // Download file content
+                      const response = await fetch(fileUrl, {
+                        headers: {
+                          'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+                        },
+                      });
+
+                      if (!response.ok) {
+                        throw new Error(`Failed to download file: ${response.statusText}`);
+                      }
+
+                      content = await response.text();
+                      origin = (await import("@prisma/client")).TranscriptOrigin.file_upload;
+
+                      logger?.info("✅ [App Home Upload] File downloaded", {
+                        fileName,
+                        contentLength: content.length,
+                      });
+                    } catch (error) {
+                      logger?.error("❌ [App Home Upload] File download failed", { error });
+                      return c.json({
+                        response_action: "errors",
+                        errors: {
+                          file_input: error instanceof Error ? error.message : "Failed to process file",
+                        },
+                      });
+                    }
+                  } else if (transcriptText) {
+                    content = transcriptText;
+                    origin = (await import("@prisma/client")).TranscriptOrigin.paste;
+                  } else if (transcriptLink) {
+                    content = transcriptLink;
+                    origin = (await import("@prisma/client")).TranscriptOrigin.link;
+                  } else {
+                    return c.json({
+                      response_action: "errors",
+                      errors: {
+                        transcript_text_block: "Please provide a file, text, or link",
+                      },
+                    });
+                  }
 
                   // Use the shared ingestion service
                   const { ingestTranscript } = await import("./services/transcriptIngestion");
-                  const { TranscriptOrigin } = await import("@prisma/client");
 
-                  const content = transcriptText || transcriptLink || "";
-                  const origin = transcriptLink ? TranscriptOrigin.link : TranscriptOrigin.paste;
-                  const title = `Upload from App Home - ${new Date().toLocaleDateString()}`;
+                  const title = transcriptTitle;
 
                   const result = await ingestTranscript({
                     title,
@@ -2200,6 +2256,7 @@ export const mastra = new Mastra({
                     slackUserId: userId,
                     slackChannelId: userId,
                     metadata: {
+                      fileName,
                       linkUrl: transcriptLink,
                     },
                   }, logger);
