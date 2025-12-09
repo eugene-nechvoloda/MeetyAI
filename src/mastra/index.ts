@@ -142,6 +142,82 @@ export const mastra = new Mastra({
         // 3. Establishing a publish-subscribe system for real-time monitoring
         //    through the workflow:${workflowId}:${runId} channel
       },
+      // Workflow start endpoint - triggers metiyWorkflow execution
+      {
+        path: "/api/workflows/metiyWorkflow/start",
+        method: "POST",
+        createHandler: async ({ mastra }) => {
+          return async (c) => {
+            const logger = mastra.getLogger();
+            logger?.info("🚀 [Workflow Start] Received workflow start request");
+
+            try {
+              const body = await c.req.json();
+              const inputData = body.inputData;
+
+              if (!inputData) {
+                logger?.error("❌ [Workflow Start] Missing inputData in request body");
+                return c.json({
+                  success: false,
+                  error: "Missing inputData in request body",
+                }, 400);
+              }
+
+              logger?.info("🔄 [Workflow Start] Starting workflow", {
+                transcriptId: inputData.transcriptId,
+                threadId: inputData.threadId,
+              });
+
+              // Execute the workflow directly using Mastra's workflow execution
+              const workflow = mastra.getWorkflow("metiy-workflow");
+
+              if (!workflow) {
+                logger?.error("❌ [Workflow Start] Workflow not found");
+                return c.json({
+                  success: false,
+                  error: "Workflow 'metiy-workflow' not found",
+                }, 404);
+              }
+
+              // Start workflow execution (async, don't wait for completion)
+              const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+              // Execute workflow in background
+              workflow.execute({
+                inputData,
+                runId,
+              }).catch((error: Error) => {
+                logger?.error("❌ [Workflow Start] Workflow execution failed", {
+                  error: error.message,
+                  transcriptId: inputData.transcriptId,
+                  runId,
+                });
+              });
+
+              logger?.info("✅ [Workflow Start] Workflow started successfully", {
+                runId,
+                transcriptId: inputData.transcriptId,
+              });
+
+              return c.json({
+                success: true,
+                runId,
+                workflowId: "metiy-workflow",
+              }, 200);
+
+            } catch (error) {
+              logger?.error("❌ [Workflow Start] Error processing request", {
+                error: error instanceof Error ? error.message : "Unknown error",
+              });
+
+              return c.json({
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+              }, 500);
+            }
+          };
+        },
+      },
       // Webhook endpoint for external transcript integration (n8n, Zapier, custom APIs)
       {
         path: "/api/webhooks/transcript",
