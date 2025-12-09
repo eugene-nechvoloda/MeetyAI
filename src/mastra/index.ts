@@ -168,42 +168,44 @@ export const mastra = new Mastra({
                 threadId: inputData.threadId,
               });
 
-              // Execute the workflow directly using Mastra's workflow execution
-              const workflow = mastra.getWorkflow("metiyWorkflow");
+              // Execute the workflow directly
+              try {
+                // Start workflow execution (async, don't wait for completion)
+                const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-              if (!workflow) {
-                logger?.error("❌ [Workflow Start] Workflow not found");
+                // Execute workflow in background using the imported workflow directly
+                metiyWorkflow.execute({
+                  inputData,
+                  runId,
+                }).catch((error: Error) => {
+                  logger?.error("❌ [Workflow Start] Workflow execution failed", {
+                    error: error.message,
+                    transcriptId: inputData.transcriptId,
+                    runId,
+                  });
+                });
+
+                logger?.info("✅ [Workflow Start] Workflow started successfully", {
+                  runId,
+                  transcriptId: inputData.transcriptId,
+                });
+
+                return c.json({
+                  success: true,
+                  runId,
+                  workflowId: "metiyWorkflow",
+                }, 200);
+              } catch (execError) {
+                logger?.error("❌ [Workflow Start] Failed to execute workflow", {
+                  error: execError instanceof Error ? execError.message : String(execError),
+                  transcriptId: inputData.transcriptId,
+                });
+
                 return c.json({
                   success: false,
-                  error: "Workflow 'metiyWorkflow' not found",
-                }, 404);
+                  error: execError instanceof Error ? execError.message : "Failed to execute workflow",
+                }, 500);
               }
-
-              // Start workflow execution (async, don't wait for completion)
-              const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-              // Execute workflow in background
-              workflow.execute({
-                inputData,
-                runId,
-              }).catch((error: Error) => {
-                logger?.error("❌ [Workflow Start] Workflow execution failed", {
-                  error: error.message,
-                  transcriptId: inputData.transcriptId,
-                  runId,
-                });
-              });
-
-              logger?.info("✅ [Workflow Start] Workflow started successfully", {
-                runId,
-                transcriptId: inputData.transcriptId,
-              });
-
-              return c.json({
-                success: true,
-                runId,
-                workflowId: "metiyWorkflow",
-              }, 200);
 
             } catch (error) {
               logger?.error("❌ [Workflow Start] Error processing request", {
