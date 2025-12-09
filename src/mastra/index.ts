@@ -163,47 +163,40 @@ export const mastra = new Mastra({
                 }, 400);
               }
 
-              logger?.info("🔄 [Workflow Start] Starting workflow", {
+              logger?.info("🔄 [Workflow Start] Starting workflow via Inngest", {
                 transcriptId: inputData.transcriptId,
                 threadId: inputData.threadId,
               });
 
-              // Execute the workflow directly
               try {
-                // Start workflow execution (async, don't wait for completion)
-                const runId = `run-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-                // Execute workflow in background using the imported workflow directly
-                metiyWorkflow.execute({
-                  inputData,
-                  runId,
-                }).catch((error: Error) => {
-                  logger?.error("❌ [Workflow Start] Workflow execution failed", {
-                    error: error.message,
-                    transcriptId: inputData.transcriptId,
-                    runId,
-                  });
+                // Trigger workflow via Inngest event
+                await inngest.send({
+                  name: "mastra/workflow.run",
+                  data: {
+                    workflowId: "metiy-workflow",
+                    inputData,
+                  },
                 });
 
-                logger?.info("✅ [Workflow Start] Workflow started successfully", {
-                  runId,
+                logger?.info("✅ [Workflow Start] Workflow event sent to Inngest", {
+                  workflowId: "metiy-workflow",
                   transcriptId: inputData.transcriptId,
                 });
 
                 return c.json({
                   success: true,
-                  runId,
-                  workflowId: "metiyWorkflow",
+                  workflowId: "metiy-workflow",
+                  message: "Workflow triggered via Inngest",
                 }, 200);
               } catch (execError) {
-                logger?.error("❌ [Workflow Start] Failed to execute workflow", {
+                logger?.error("❌ [Workflow Start] Failed to send Inngest event", {
                   error: execError instanceof Error ? execError.message : String(execError),
                   transcriptId: inputData.transcriptId,
                 });
 
                 return c.json({
                   success: false,
-                  error: execError instanceof Error ? execError.message : "Failed to execute workflow",
+                  error: execError instanceof Error ? execError.message : "Failed to trigger workflow",
                 }, 500);
               }
 
