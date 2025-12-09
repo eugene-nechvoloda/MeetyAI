@@ -10,6 +10,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:clean": "tsx scripts/clean-db.ts",
     "check": "tsc --noEmit",
     "format": "prettier --write '**/*.ts'"
   },
