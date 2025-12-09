@@ -169,13 +169,13 @@ export const mastra = new Mastra({
               });
 
               // Execute the workflow directly using Mastra's workflow execution
-              const workflow = mastra.getWorkflow("metiy-workflow");
+              const workflow = mastra.getWorkflow("metiyWorkflow");
 
               if (!workflow) {
                 logger?.error("❌ [Workflow Start] Workflow not found");
                 return c.json({
                   success: false,
-                  error: "Workflow 'metiy-workflow' not found",
+                  error: "Workflow 'metiyWorkflow' not found",
                 }, 404);
               }
 
@@ -202,7 +202,7 @@ export const mastra = new Mastra({
               return c.json({
                 success: true,
                 runId,
-                workflowId: "metiy-workflow",
+                workflowId: "metiyWorkflow",
               }, 200);
 
             } catch (error) {
