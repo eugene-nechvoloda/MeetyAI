@@ -17,15 +17,15 @@ const SYSTEM_PROMPT = `You are MeetyAI, an AI assistant specialized in analyzing
 Your task is to analyze the provided transcript and extract key insights.
 
 Valid insight types:
-- pain: User pain points or problems
-- blocker: Obstacles preventing progress
+- pain_point: User pain points or problems explicitly mentioned
+- hidden_complaint: Subtle complaints or frustrations not directly stated
+- explicit_complaint: Direct complaints or negative feedback
 - feature_request: Requested features or capabilities
 - idea: New ideas or suggestions
-- gain: Positive outcomes or wins
-- outcome: Results or conclusions
+- opportunity: Potential opportunities or positive directions
+- blocker: Obstacles preventing progress
+- question: Important questions raised
 - feedback: General feedback or opinions
-- opportunity: Potential opportunities identified
-- insight: General insights or observations
 - other: Anything else noteworthy
 
 Format your response as JSON:
@@ -33,7 +33,7 @@ Format your response as JSON:
   "summary": "Brief meeting summary",
   "insights": [
     {
-      "type": "pain" | "feature_request" | "idea" | "gain" | "outcome" | "feedback" | "opportunity" | "insight" | "other",
+      "type": "pain_point" | "hidden_complaint" | "explicit_complaint" | "feature_request" | "idea" | "opportunity" | "blocker" | "question" | "feedback" | "other",
       "title": "Short title (max 100 chars)",
       "description": "Detailed description",
       "owner": "Person responsible (if mentioned, otherwise null)"
@@ -45,10 +45,10 @@ export async function processTranscript(transcriptId: string): Promise<void> {
   logger.info(`🚀 Processing transcript ${transcriptId}`);
 
   try {
-    // Update status to analyzing
+    // Update status to processing
     await prisma.transcript.update({
       where: { id: transcriptId },
-      data: { status: TranscriptStatus.analyzing_pass_1 },
+      data: { status: TranscriptStatus.processing },
     });
 
     // Get transcript
@@ -85,12 +85,6 @@ export async function processTranscript(transcriptId: string): Promise<void> {
 
     logger.info(`✅ Analysis complete, found ${result.insights.length} insights`);
 
-    // Update status to compiling
-    await prisma.transcript.update({
-      where: { id: transcriptId },
-      data: { status: TranscriptStatus.compiling_insights },
-    });
-
     // Save insights
     for (const insight of result.insights) {
       await prisma.insight.create({
@@ -107,11 +101,11 @@ export async function processTranscript(transcriptId: string): Promise<void> {
       });
     }
 
-    // Mark as completed
+    // Mark as processed
     await prisma.transcript.update({
       where: { id: transcriptId },
       data: {
-        status: TranscriptStatus.completed,
+        status: TranscriptStatus.processed,
         processed_at: new Date(),
       },
     });

@@ -112,7 +112,7 @@ export async function handleUploadModal({
       data: {
         title: transcriptTitle,
         origin,
-        status: 'file_uploaded',
+        status: 'pending',
         slack_user_id: userId,
         slack_channel_id: 'app_home',
         raw_content: content,

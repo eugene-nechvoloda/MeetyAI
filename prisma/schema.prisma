@@ -15,7 +15,7 @@ model Transcript {
   id                String              @id @default(uuid())
   title             String
   origin            TranscriptOrigin    // file_upload, paste, link, zoom_import, fireflies_import
-  status            TranscriptStatus    @default(file_uploaded)
+  status            TranscriptStatus    @default(pending)
   
   // Slack metadata
   slack_user_id     String
@@ -78,16 +78,10 @@ enum TranscriptOrigin {
 }
 
 enum TranscriptStatus {
-  file_uploaded
-  transcribing
-  translating
-  analyzing_pass_1
-  analyzing_pass_2
-  analyzing_pass_3
-  analyzing_pass_4
-  compiling_insights
-  completed
-  failed
+  pending      // Uploaded but not processed yet
+  processing   // Being analyzed
+  processed    // Analysis complete
+  failed       // Processing failed
 }
 
 // Insights extracted from transcripts
@@ -144,27 +138,21 @@ model Insight {
 }
 
 enum InsightType {
-  pain
-  blocker
+  pain_point
+  hidden_complaint
+  explicit_complaint
   feature_request
   idea
-  gain
-  outcome
-  objection
-  buying_signal
+  opportunity
+  blocker
   question
   feedback
-  confusion
-  opportunity
-  insight
   other
 }
 
 enum InsightStatus {
-  new           // Not yet exported (default)
-  exported      // Successfully exported to destination
-  export_failed // Export attempt failed
-  archived      // Archived/hidden by user
+  new       // Not yet exported (default)
+  exported  // Successfully exported to destination
 }
 
 // Activity log for transcripts
