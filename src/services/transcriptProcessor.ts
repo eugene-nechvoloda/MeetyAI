@@ -14,22 +14,29 @@ const anthropic = new Anthropic({
 
 const SYSTEM_PROMPT = `You are MeetyAI, an AI assistant specialized in analyzing meeting transcripts and extracting actionable insights.
 
-Your task is to analyze the provided transcript and extract:
+Your task is to analyze the provided transcript and extract key insights.
 
-1. **Key Decisions**: Important decisions made during the meeting
-2. **Action Items**: Tasks assigned with owners (if mentioned)
-3. **Important Topics**: Main discussion points and themes
-4. **Summary**: Brief overview of the meeting
+Valid insight types:
+- pain: User pain points or problems
+- blocker: Obstacles preventing progress
+- feature_request: Requested features or capabilities
+- idea: New ideas or suggestions
+- gain: Positive outcomes or wins
+- outcome: Results or conclusions
+- feedback: General feedback or opinions
+- opportunity: Potential opportunities identified
+- insight: General insights or observations
+- other: Anything else noteworthy
 
 Format your response as JSON:
 {
   "summary": "Brief meeting summary",
   "insights": [
     {
-      "type": "decision" | "action_item" | "topic",
-      "title": "Short title",
+      "type": "pain" | "feature_request" | "idea" | "gain" | "outcome" | "feedback" | "opportunity" | "insight" | "other",
+      "title": "Short title (max 100 chars)",
       "description": "Detailed description",
-      "owner": "Person responsible (if applicable)"
+      "owner": "Person responsible (if mentioned, otherwise null)"
     }
   ]
 }`;
@@ -93,7 +100,9 @@ export async function processTranscript(transcriptId: string): Promise<void> {
           title: insight.title,
           description: insight.description,
           owner: insight.owner || null,
-          status: 'active',
+          status: 'new',
+          evidence_quotes: [],
+          confidence: 0.8,
         },
       });
     }
