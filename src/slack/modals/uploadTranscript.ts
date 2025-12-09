@@ -3,7 +3,6 @@
  */
 
 import type { ViewSubmitAction, SlackViewMiddlewareArgs } from '@slack/bolt';
-import { TranscriptOrigin } from '@prisma/client';
 import { logger, prisma } from '../../index.js';
 import { processTranscript } from '../../services/transcriptProcessor.js';
 
@@ -29,7 +28,7 @@ export async function handleUploadModal({
   });
 
   let content = '';
-  let origin: TranscriptOrigin;
+  let origin: 'file_upload' | 'paste' | 'link';
   let fileName: string | undefined;
 
   // Priority: File > Text > Link
@@ -74,7 +73,7 @@ export async function handleUploadModal({
       }
 
       content = await response.text();
-      origin = TranscriptOrigin.file_upload;
+      origin = 'file_upload';
 
       logger.info(`✅ [Upload Modal] File downloaded: ${fileName}`);
     } catch (error) {
@@ -89,10 +88,10 @@ export async function handleUploadModal({
     }
   } else if (transcriptText) {
     content = transcriptText;
-    origin = TranscriptOrigin.paste;
+    origin = 'paste';
   } else if (transcriptLink) {
     content = transcriptLink;
-    origin = TranscriptOrigin.link;
+    origin = 'link';
   } else {
     await ack({
       response_action: 'errors',

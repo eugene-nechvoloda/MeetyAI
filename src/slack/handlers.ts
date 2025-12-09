@@ -30,53 +30,43 @@ export function registerHandlers(slack: App, logger: ReturnType<typeof pino>) {
   // Upload transcript modal submission
   slack.view('upload_transcript_modal', handleUploadModal);
 
-  // Re-analyze transcript button
-  slack.action('reanalyze_transcript', async ({ body, ack, client }) => {
+  // Overflow menu actions (re-analyze, archive)
+  slack.action(/^transcript_menu_.*/, async ({ body, ack, action, client }) => {
     await ack();
 
     try {
-      const transcriptId = body.actions[0].value;
+      // @ts-ignore - action.selected_option exists for overflow menus
+      const selectedOption = action.selected_option;
+      const transcriptId = selectedOption.value;
+      const actionText = selectedOption.text.text;
       const userId = body.user.id;
 
-      logger.info(`Re-analyze requested for transcript ${transcriptId}`);
+      logger.info(`Transcript action: ${actionText} for ${transcriptId}`);
 
-      // Trigger re-analysis in background
-      processTranscript(transcriptId).catch(error => {
-        logger.error(`Re-analysis failed for ${transcriptId}:`, error);
-      });
+      if (actionText.includes('Re-analyze')) {
+        // Re-analyze transcript
+        logger.info(`Re-analyze requested for transcript ${transcriptId}`);
+
+        processTranscript(transcriptId).catch(error => {
+          logger.error(`Re-analysis failed for ${transcriptId}:`, error);
+        });
+      } else if (actionText.includes('Archive')) {
+        // Archive transcript
+        logger.info(`Archive requested for transcript ${transcriptId}`);
+
+        const { prisma } = await import('../index.js');
+        await prisma.transcript.update({
+          where: { id: transcriptId },
+          data: { archived: true, archived_at: new Date() },
+        });
+      }
 
       // Update view
       const view = await buildHomeTab(userId);
       await client.views.publish({ user_id: userId, view });
 
     } catch (error) {
-      logger.error('Error handling reanalyze:', error);
-    }
-  });
-
-  // Archive transcript button
-  slack.action('archive_transcript', async ({ body, ack, client }) => {
-    await ack();
-
-    try {
-      const transcriptId = body.actions[0].value;
-      const userId = body.user.id;
-
-      logger.info(`Archive requested for transcript ${transcriptId}`);
-
-      const { prisma } = await import('../index.js');
-
-      await prisma.transcript.update({
-        where: { id: transcriptId },
-        data: { archived: true, archived_at: new Date() },
-      });
-
-      // Update view
-      const view = await buildHomeTab(userId);
-      await client.views.publish({ user_id: userId, view });
-
-    } catch (error) {
-      logger.error('Error handling archive:', error);
+      logger.error('Error handling transcript menu action:', error);
     }
   });
 

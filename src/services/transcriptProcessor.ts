@@ -5,7 +5,6 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { TranscriptStatus } from '@prisma/client';
 import { logger, prisma, slack } from '../index.js';
 
 const anthropic = new Anthropic({
@@ -48,7 +47,7 @@ export async function processTranscript(transcriptId: string): Promise<void> {
     // Update status to processing
     await prisma.transcript.update({
       where: { id: transcriptId },
-      data: { status: TranscriptStatus.processing },
+      data: { status: 'processing' },
     });
 
     // Get transcript
@@ -105,7 +104,7 @@ export async function processTranscript(transcriptId: string): Promise<void> {
     await prisma.transcript.update({
       where: { id: transcriptId },
       data: {
-        status: TranscriptStatus.processed,
+        status: 'processed',
         processed_at: new Date(),
       },
     });
@@ -136,7 +135,7 @@ export async function processTranscript(transcriptId: string): Promise<void> {
     // Mark as failed
     await prisma.transcript.update({
       where: { id: transcriptId },
-      data: { status: TranscriptStatus.failed },
+      data: { status: 'failed' },
     });
 
     throw error;
