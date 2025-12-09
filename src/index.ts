@@ -6,10 +6,12 @@
  */
 
 import express from 'express';
-import { App, ExpressReceiver } from '@slack/bolt';
+import bolt from '@slack/bolt';
 import { config } from 'dotenv';
 import pino from 'pino';
 import { PrismaClient } from '@prisma/client';
+
+const { App, ExpressReceiver } = bolt;
 
 // Load environment variables
 config();
