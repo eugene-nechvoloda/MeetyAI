@@ -47,8 +47,9 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'meetyai-simplified' });
 });
 
-// Import and register Slack handlers
-import './slack/handlers.js';
+// Register Slack handlers
+import { registerHandlers } from './slack/handlers.js';
+registerHandlers(slack, logger);
 
 // Start server
 const PORT = parseInt(process.env.PORT || '5000', 10);
