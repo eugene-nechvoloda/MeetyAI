@@ -47,22 +47,38 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'meetyai-simplified' });
 });
 
-// Test endpoint to manually trigger processing
-app.post('/test-process/:transcriptId', async (req, res) => {
-  const { transcriptId } = req.params;
-  logger.info(`[TEST] Manual processing triggered for ${transcriptId}`);
+// Test endpoint to process latest pending transcript
+app.get('/test-process-latest', async (req, res) => {
+  logger.info(`[TEST] Finding latest pending transcript...`);
 
   try {
+    // Find the most recent pending transcript
+    const transcript = await prisma.transcript.findFirst({
+      where: { status: 'pending' },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (!transcript) {
+      return res.json({ success: false, message: 'No pending transcripts found' });
+    }
+
+    logger.info(`[TEST] Found transcript ${transcript.id}, triggering processing...`);
+
     const { processTranscript } = await import('./services/transcriptProcessor.js');
-    processTranscript(transcriptId)
+    processTranscript(transcript.id)
       .then(() => {
-        logger.info(`[TEST] Processing completed for ${transcriptId}`);
+        logger.info(`[TEST] Processing completed for ${transcript.id}`);
       })
       .catch((error) => {
-        logger.error(`[TEST] Processing failed for ${transcriptId}:`, error);
+        logger.error(`[TEST] Processing failed for ${transcript.id}:`, error);
       });
 
-    res.json({ success: true, message: 'Processing started', transcriptId });
+    res.json({
+      success: true,
+      message: 'Processing started',
+      transcriptId: transcript.id,
+      title: transcript.title
+    });
   } catch (error) {
     logger.error(`[TEST] Failed to start processing:`, error);
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
