@@ -47,6 +47,28 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'meetyai-simplified' });
 });
 
+// Test endpoint to manually trigger processing
+app.post('/test-process/:transcriptId', async (req, res) => {
+  const { transcriptId } = req.params;
+  logger.info(`[TEST] Manual processing triggered for ${transcriptId}`);
+
+  try {
+    const { processTranscript } = await import('./services/transcriptProcessor.js');
+    processTranscript(transcriptId)
+      .then(() => {
+        logger.info(`[TEST] Processing completed for ${transcriptId}`);
+      })
+      .catch((error) => {
+        logger.error(`[TEST] Processing failed for ${transcriptId}:`, error);
+      });
+
+    res.json({ success: true, message: 'Processing started', transcriptId });
+  } catch (error) {
+    logger.error(`[TEST] Failed to start processing:`, error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' });
+  }
+});
+
 // Register Slack handlers
 import { registerHandlers } from './slack/handlers.js';
 registerHandlers(slack, logger);
