@@ -1,5 +1,5 @@
 /**
- * Slack App Home View Builder - Simplified
+ * Slack App Home View Builder
  */
 
 import { prisma, logger } from '../../index.js';
@@ -34,7 +34,7 @@ export async function buildHomeTab(userId: string) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '_Upload and analyze your meeting transcripts_',
+          text: '_AI-powered transcript analysis with dual-model architecture_',
         },
       },
       {
@@ -52,15 +52,6 @@ export async function buildHomeTab(userId: string) {
             },
             style: 'primary',
             action_id: 'upload_transcript_button',
-          },
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: '💬 Start Chat',
-              emoji: true,
-            },
-            action_id: 'start_chat_button',
           },
         ],
       },
@@ -168,6 +159,9 @@ function getStatusText(status: string): string {
     case 'file_uploaded':
       return 'Pending';
     case 'analyzing_pass_1':
+    case 'analyzing_pass_2':
+    case 'analyzing_pass_3':
+    case 'analyzing_pass_4':
       return 'Analyzing';
     case 'compiling_insights':
       return 'Compiling';
