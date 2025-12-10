@@ -119,7 +119,7 @@ export async function processTranscript(transcriptId: string): Promise<void> {
     await refreshAppHome(transcript.slack_user_id);
 
   } catch (error) {
-    logger.error(`❌ Failed to process transcript ${transcriptId}:`, error);
+    logger.error({ error }, `❌ Failed to process transcript ${transcriptId}`);
 
     // Mark as failed
     await updateStatus(transcriptId, TranscriptStatus.failed);
@@ -251,7 +251,7 @@ Focus on actionable insights.`;
         allInsights.push(...result.raw_insights);
         logger.info(`✅ Pass ${passInfo.pass} extracted ${result.raw_insights.length} insights`);
       } catch (e) {
-        logger.error(`❌ Failed to parse pass ${passInfo.pass} response:`, e);
+        logger.error({ error: e }, `❌ Failed to parse pass ${passInfo.pass} response`);
       }
     }
   }
@@ -316,7 +316,7 @@ Return JSON only:
       const result = JSON.parse(content);
       return result.insights;
     } catch (e) {
-      logger.error('❌ Failed to parse GPT-5 response:', e);
+      logger.error({ error: e }, '❌ Failed to parse GPT-5 response');
       return rawInsights; // Fallback to raw insights
     }
   }
@@ -377,7 +377,7 @@ async function sendCompletionNotification(transcript: any, insightCount: number)
       text: `✅ Analysis complete for "${transcript.title}"!\n\nExtracted ${insightCount} insights using dual-AI processing.`,
     });
   } catch (error) {
-    logger.error('Failed to send completion notification:', error);
+    logger.error({ error }, 'Failed to send completion notification');
   }
 }
 
@@ -390,9 +390,9 @@ async function refreshAppHome(userId: string): Promise<void> {
     const view = await buildHomeTab(userId);
     await slack.client.views.publish({
       user_id: userId,
-      view,
+      view: view as any,
     });
   } catch (error) {
-    logger.error('Failed to refresh App Home:', error);
+    logger.error({ error }, 'Failed to refresh App Home');
   }
 }

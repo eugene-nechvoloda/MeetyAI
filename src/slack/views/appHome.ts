@@ -117,7 +117,7 @@ export async function buildHomeTab(userId: string) {
       blocks,
     };
   } catch (error) {
-    logger.error('Error building app home:', error);
+    logger.error({ error }, 'Error building app home');
 
     return {
       type: 'home',
