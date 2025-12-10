@@ -3,6 +3,7 @@
  */
 
 import type { ViewSubmitAction, SlackViewMiddlewareArgs } from '@slack/bolt';
+import type { WebClient } from '@slack/web-api';
 import { TranscriptOrigin } from '@prisma/client';
 import { logger, prisma } from '../../index.js';
 import { processTranscript } from '../../services/transcriptProcessor.js';
@@ -12,7 +13,7 @@ export async function handleUploadModal({
   body,
   view,
   client,
-}: SlackViewMiddlewareArgs<ViewSubmitAction>) {
+}: SlackViewMiddlewareArgs<ViewSubmitAction> & { client: WebClient }) {
   const values = view.state.values;
   const userId = body.user.id;
 
@@ -21,12 +22,12 @@ export async function handleUploadModal({
   const transcriptTitle = values.title_input?.title?.value || `Upload from App Home - ${new Date().toLocaleDateString()}`;
   const fileIds = values.file_input?.file_input?.files;
 
-  logger.info('📤 [Upload Modal] Processing submission', {
+  logger.info({
     hasText: !!transcriptText,
     hasLink: !!transcriptLink,
     hasFile: !!fileIds && fileIds.length > 0,
     userId,
-  });
+  }, '📤 [Upload Modal] Processing submission');
 
   let content = '';
   let origin: TranscriptOrigin;
@@ -78,7 +79,7 @@ export async function handleUploadModal({
 
       logger.info(`✅ [Upload Modal] File downloaded: ${fileName}`);
     } catch (error) {
-      logger.error('❌ [Upload Modal] File download failed:', error);
+      logger.error({ error }, '❌ [Upload Modal] File download failed');
       await ack({
         response_action: 'errors',
         errors: {
@@ -137,7 +138,7 @@ export async function handleUploadModal({
     });
 
   } catch (error) {
-    logger.error('❌ [Upload Modal] Failed to create transcript:', error);
+    logger.error({ error }, '❌ [Upload Modal] Failed to create transcript');
 
     await client.chat.postMessage({
       channel: userId,

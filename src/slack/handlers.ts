@@ -19,10 +19,10 @@ slack.event('app_home_opened', async ({ event, client }) => {
 
     await client.views.publish({
       user_id: event.user,
-      view,
+      view: view as any,
     });
   } catch (error) {
-    logger.error('Error handling app_home_opened:', error);
+    logger.error({ error }, 'Error handling app_home_opened');
   }
 });
 
@@ -67,10 +67,10 @@ slack.action(/^transcript_menu_/, async ({ body, ack, client, action }) => {
 
     // Refresh App Home
     const view = await buildHomeTab(userId);
-    await client.views.publish({ user_id: userId, view });
+    await client.views.publish({ user_id: userId, view: view as any });
 
   } catch (error) {
-    logger.error('Error handling transcript menu action:', error);
+    logger.error({ error }, 'Error handling transcript menu action');
   }
 });
 
@@ -82,11 +82,11 @@ slack.action('upload_transcript_button', async ({ body, ack, client }) => {
     const { buildUploadModal } = await import('./views/uploadModal.js');
 
     await client.views.open({
-      trigger_id: body.trigger_id,
-      view: buildUploadModal(),
+      trigger_id: (body as any).trigger_id,
+      view: buildUploadModal() as any,
     });
   } catch (error) {
-    logger.error('Error opening upload modal:', error);
+    logger.error({ error }, 'Error opening upload modal');
   }
 });
 
