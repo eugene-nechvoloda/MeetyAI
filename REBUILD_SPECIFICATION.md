@@ -4,6 +4,28 @@
 
 This document contains the COMPLETE specification for rebuilding MeetyAI from scratch. It serves as the single source of truth for all features, data models, UI patterns, and workflows.
 
+## 📝 MVP Scope
+
+This specification focuses on **MVP (Minimum Viable Product)** to get a working system quickly:
+
+**Simplified for MVP:**
+- ✅ Dual AI model (Claude Sonnet 4.5 for analysis, GPT-5 for writing) - **hardcoded, no UI config**
+- ✅ Custom Context and Insight Examples in settings
+- ❌ Auto-approve insights - **removed for MVP**
+- ❌ Research depth slider - **hardcoded to 0.7**
+- ❌ Temperature slider - **hardcoded to 0.35**
+- ❌ Model Configuration UI - **removed for MVP**
+- ❌ Import test connection - **removed for MVP**
+- ❌ Import filters (lookback days, team filter) - **removed for MVP**
+- ❌ Export test export button - **removed for MVP**
+- ❌ Export filters (min confidence, types filter) - **removed for MVP**
+
+**Future Expansion:**
+- User-configurable AI models
+- Advanced filtering options
+- Auto-approve workflows
+- Research depth customization
+
 ---
 
 ## 📊 Database Schema
@@ -495,15 +517,14 @@ This document contains the COMPLETE specification for rebuilding MeetyAI from sc
 **Fields**:
 - `id` (UUID, Primary Key)
 - `user_id` (String, Unique) - Slack user ID
-- `research_depth` (Float, Default: 0.7) - How many insights to extract
-- `temperature` (Float, Default: 0.35) - LLM temperature
-- `auto_approve` (Boolean, Default: false) - Auto-approve insights
 - `notify_on_completion` (Boolean, Default: true)
 - `notify_on_failure` (Boolean, Default: true)
 - `custom_context` (Text, Optional) - User's custom definition of pain points, complaints, etc.
 - `insight_examples` (Text, Optional) - User-provided examples of insights
 - `created_at` (DateTime)
 - `updated_at` (DateTime)
+
+**Note**: Research depth and temperature are hardcoded in the application (depth: 0.7, temperature: 0.35) for MVP.
 
 ---
 
@@ -594,13 +615,6 @@ This document contains the COMPLETE specification for rebuilding MeetyAI from sc
 **Tabs**:
 
 #### 1. Analysis Settings
-- **Research Depth** slider (0.0 - 1.0)
-  - Label: "How many insights to extract"
-  - Help text: "0.7 = ~7 insights per hour of conversation"
-
-- **Temperature** slider (0.0 - 1.0)
-  - Label: "AI creativity level"
-  - Help text: "Lower = more focused, Higher = more creative"
 
 - **Custom Context** (Large text area)
   - Label: "Define what you consider as pain points, hidden complaints, etc."
@@ -612,25 +626,7 @@ This document contains the COMPLETE specification for rebuilding MeetyAI from sc
   - Placeholder: "Example:\nTitle: User frustrated with login process\nDescription: Customer mentioned difficulty remembering password\nType: Pain Point"
   - Help text: "The AI will use these examples to better match your expectations"
 
-- **Auto-approve insights** checkbox
-
-#### 2. Model Configuration
-- **Analysis Model** dropdown
-  - Options: Claude Sonnet 4.5, GPT-4o, GPT-5 (Preview), Custom
-  - Default: Claude Sonnet 4.5
-
-- **Writing Model** dropdown
-  - Label: "Model for writing insight titles and descriptions"
-  - Options: GPT-5 (Preview), Claude Sonnet 4.5, GPT-4o
-  - Default: GPT-5 (Preview)
-  - Help text: "GPT-5 provides superior writing quality for final insights"
-
-- **Custom API Keys** (Optional)
-  - Anthropic API Key input
-  - OpenAI API Key input
-  - Test connection button
-
-#### 3. Import Sources
+#### 2. Import Sources
 **List of configured sources** with Add New button
 
 **Add Import Source Flow**:
@@ -659,22 +655,15 @@ This document contains the COMPLETE specification for rebuilding MeetyAI from sc
      - Daily at midnight (0 0 * * *)
      - Custom cron expression input
 
-   - **Filters** (Optional):
-     - Lookback days input: "Fetch transcripts from last X days"
-     - Team filter input
-     - Status filter input
-
-   - **Test Connection** button
    - **Save** button
 
 **Each configured import shows**:
 - Label & provider icon
 - Status: Active/Paused
 - Last run: timestamp
-- Next run: timestamp
 - Edit/Delete buttons
 
-#### 4. Export Destinations
+#### 3. Export Destinations
 **List of configured destinations** with Add New button
 
 **Add Export Destination Flow**:
@@ -719,22 +708,14 @@ This document contains the COMPLETE specification for rebuilding MeetyAI from sc
      Transcript Title      →    [Dropdown: Transcript/Meeting/Source/...]
      ```
 
-   - **Export Filters**:
-     - Minimum confidence slider (0.0 - 1.0)
-     - Insight types multi-select: Pain, Blocker, Feature Request, etc.
-     - Exclude duplicates checkbox (default: checked)
-
-   - **Test Export** button (sends 1 test insight)
    - **Save** button
 
 **Each configured export shows**:
 - Label & provider icon
 - Status: Active/Paused
-- Field mapping summary (e.g., "7 fields mapped")
-- Last export: timestamp & count
 - Edit/Delete buttons
 
-#### 5. Notifications
+#### 4. Notifications
 - **Notify on completion** checkbox
 - **Notify on failure** checkbox
 - **Slack channel for notifications** dropdown (optional)
