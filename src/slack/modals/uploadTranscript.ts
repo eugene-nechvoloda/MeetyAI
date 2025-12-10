@@ -124,16 +124,26 @@ export async function handleUploadModal({
 
     logger.info(`✅ [Upload Modal] Transcript created: ${transcript.id}`);
 
-    // Start processing in background
-    processTranscript(transcript.id).catch(error => {
-      logger.error(`❌ Background processing failed for ${transcript.id}:`, error);
-    });
-
-    // Send confirmation
+    // Send immediate confirmation
     await client.chat.postMessage({
       channel: userId,
-      text: `✅ Transcript "${transcriptTitle}" uploaded and processing started!`,
+      text: `✅ Transcript "${transcriptTitle}" uploaded!\n\n🔄 Starting analysis... (this may take 30-60 seconds)`,
     });
+
+    // Start processing in background with detailed error handling
+    processTranscript(transcript.id)
+      .then(() => {
+        logger.info(`✅ Background processing completed for ${transcript.id}`);
+      })
+      .catch(async (error) => {
+        logger.error(`❌ Background processing failed for ${transcript.id}:`, error);
+
+        // Notify user of failure
+        await client.chat.postMessage({
+          channel: userId,
+          text: `❌ Processing failed for "${transcriptTitle}":\n${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease try again or contact support.`,
+        });
+      });
 
   } catch (error) {
     logger.error('❌ [Upload Modal] Failed to create transcript:', error);

@@ -41,14 +41,17 @@ Format your response as JSON:
 }`;
 
 export async function processTranscript(transcriptId: string): Promise<void> {
+  console.log(`[DEBUG] processTranscript CALLED for ID: ${transcriptId}`);
   logger.info(`🚀 Processing transcript ${transcriptId}`);
 
   try {
+    console.log(`[DEBUG] Updating status to 'processing' for ${transcriptId}`);
     // Update status to processing
     await prisma.transcript.update({
       where: { id: transcriptId },
       data: { status: 'processing' },
     });
+    console.log(`[DEBUG] Status updated to 'processing' successfully`);
 
     // Get transcript
     const transcript = await prisma.transcript.findUnique({
