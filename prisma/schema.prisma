@@ -359,3 +359,73 @@ model UserSetting {
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
 }
+
+// Chat conversations with AI assistant
+model ChatConversation {
+  id                String        @id @default(uuid())
+  slack_user_id     String
+  slack_channel_id  String?
+  slack_thread_ts   String?       // Thread timestamp for Slack conversations
+
+  title             String?       // Optional conversation title
+  status            ConversationStatus @default(active)
+
+  // Context
+  transcript_id     String?       // Optional: if conversation is about a specific transcript
+
+  // Timestamps
+  created_at        DateTime      @default(now())
+  updated_at        DateTime      @updatedAt
+  last_message_at   DateTime      @default(now())
+
+  // Archive
+  archived          Boolean       @default(false)
+  archived_at       DateTime?
+
+  // Relations
+  messages          ChatMessage[]
+
+  @@index([slack_user_id])
+  @@index([status])
+  @@index([created_at])
+  @@index([last_message_at])
+  @@index([archived])
+}
+
+enum ConversationStatus {
+  active
+  archived
+  deleted
+}
+
+// Individual messages in a chat conversation
+model ChatMessage {
+  id                String           @id @default(uuid())
+  conversation_id   String
+  conversation      ChatConversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  role              MessageRole      // user, assistant, system
+  content           String           @db.Text
+
+  // Metadata
+  slack_message_ts  String?          // Slack message timestamp
+  tokens_used       Int?             // Tokens consumed by this message
+  model_used        String?          // AI model used for assistant responses
+
+  // Processing
+  is_error          Boolean          @default(false)
+  error_message     String?          @db.Text
+
+  // Timestamps
+  created_at        DateTime         @default(now())
+
+  @@index([conversation_id])
+  @@index([role])
+  @@index([created_at])
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}

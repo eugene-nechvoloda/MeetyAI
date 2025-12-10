@@ -53,6 +53,15 @@ export async function buildHomeTab(userId: string) {
             style: 'primary',
             action_id: 'upload_transcript_button',
           },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '💬 Start Chat',
+              emoji: true,
+            },
+            action_id: 'start_chat_button',
+          },
         ],
       },
       {
