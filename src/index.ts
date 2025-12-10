@@ -1,72 +1,116 @@
 /**
- * MeetyAI - Simplified Architecture
+ * MeetyAI Rebuild - Main Server Entry Point
  *
- * Removed: Mastra, Inngest workflows
- * Using: Express + Slack Bolt + Direct Anthropic API
+ * Dual-AI transcript analysis with Claude Sonnet 4.5 + GPT-5
  */
 
-import express from 'express';
 import { App, ExpressReceiver } from '@slack/bolt';
-import { config } from 'dotenv';
-import pino from 'pino';
 import { PrismaClient } from '@prisma/client';
+import pino from 'pino';
+import dotenv from 'dotenv';
 
 // Load environment variables
-config();
+dotenv.config();
 
 // Initialize logger
 export const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
-  transport: process.env.NODE_ENV !== 'production'
-    ? { target: 'pino-pretty', options: { colorize: true } }
-    : undefined,
+  transport: {
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      translateTime: 'HH:MM:ss',
+      ignore: 'pid,hostname',
+    },
+  },
 });
 
 // Initialize Prisma
-export const prisma = new PrismaClient();
+export const prisma = new PrismaClient({
+  log: [
+    { emit: 'event', level: 'query' },
+    { emit: 'event', level: 'error' },
+    { emit: 'event', level: 'warn' },
+  ],
+});
 
-// Initialize Express receiver for Slack
+// Log Prisma queries in development
+if (process.env.NODE_ENV === 'development') {
+  prisma.$on('query', (e: any) => {
+    logger.debug(`Query: ${e.query}`);
+  });
+}
+
+prisma.$on('error', (e: any) => {
+  logger.error('Prisma error:', e);
+});
+
+prisma.$on('warn', (e: any) => {
+  logger.warn('Prisma warning:', e);
+});
+
+// Initialize Slack Bolt with ExpressReceiver
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET!,
   endpoints: '/slack/events',
 });
 
-// Initialize Slack Bolt app
 export const slack = new App({
-  token: process.env.SLACK_BOT_TOKEN!,
+  token: process.env.SLACK_BOT_TOKEN,
   receiver,
 });
 
-// Get Express app from receiver
-const app = receiver.app;
-
 // Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'meetyai-simplified' });
+receiver.router.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    version: '2.0.0',
+  });
 });
 
-// Import and register Slack handlers
+// Register Slack handlers
 import './slack/handlers.js';
 
 // Start server
-const PORT = parseInt(process.env.PORT || '5000', 10);
+const PORT = process.env.PORT || 5000;
 
-async function start() {
+(async () => {
   try {
+    // Test database connection
+    await prisma.$connect();
+    logger.info('✅ Database connected');
+
+    // Test AI API keys
+    if (!process.env.ANTHROPIC_API_KEY) {
+      logger.warn('⚠️  ANTHROPIC_API_KEY not set');
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      logger.warn('⚠️  OPENAI_API_KEY not set');
+    }
+
+    // Start server
     await slack.start(PORT);
-    logger.info(`⚡️ MeetyAI server is running on port ${PORT}`);
-    logger.info(`🎯 Simplified architecture - No Mastra, No Inngest`);
+    logger.info(`⚡️ MeetyAI server running on port ${PORT}`);
+    logger.info(`📊 Dual-AI processing: Claude Sonnet 4.5 + GPT-5`);
+    logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
+    logger.info(`🤖 Slack events: http://localhost:${PORT}/slack/events`);
+
   } catch (error) {
-    logger.error('Failed to start server:', error);
+    logger.error('❌ Failed to start server:', error);
     process.exit(1);
   }
-}
-
-start();
+})();
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
+  logger.info('SIGTERM received, shutting down gracefully');
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully');
   await prisma.$disconnect();
   process.exit(0);
 });

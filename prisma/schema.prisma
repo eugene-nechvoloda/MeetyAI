@@ -1,5 +1,5 @@
-// MeetyAI Database Schema
-// Slack-native transcript analysis system with AI-powered multi-pass extraction
+// MeetyAI Rebuild Database Schema
+// Simplified for MVP with dual-AI processing
 
 generator client {
   provider = "prisma-client-js"
@@ -10,61 +10,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Transcript records - core entity for analysis
+// Core transcript entity
 model Transcript {
   id                String              @id @default(uuid())
   title             String
-  origin            TranscriptOrigin    // file_upload, paste, link, zoom_import, fireflies_import
+  origin            TranscriptOrigin
   status            TranscriptStatus    @default(file_uploaded)
-  
+
   // Slack metadata
   slack_user_id     String
   slack_channel_id  String
-  slack_message_ts  String?             // For progress updates via chat.update
-  slack_thread_ts   String?             // Thread timestamp for replies
-  
+  slack_message_ts  String?
+  slack_thread_ts   String?
+
   // Content
   raw_content       String?             @db.Text
   transcript_text   String?             @db.Text
-  content_hash      String?             // SHA-256 hash of content for deduplication
+  content_hash      String?
   language          String              @default("en")
   translated        Boolean             @default(false)
-  
+
   // Context classification
-  context_theme     String?             // research_call, feedback_session, usability_testing, sales_demo, support_call, general_interview, etc.
-  context_confidence Float?             // 0.0 to 1.0
-  
+  context_theme     String?
+  context_confidence Float?
+
   // Origin-specific metadata
   file_name         String?
   file_type         String?
   link_url          String?
   zoom_meeting_id   String?
   fireflies_id      String?
-  
+
   // Processing metadata
   duration_minutes  Int?
   participant_count Int?
-  processing_time   Int?                // in seconds
-  
+  processing_time   Int?
+
   // Timestamps
   created_at        DateTime            @default(now())
   updated_at        DateTime            @updatedAt
   processed_at      DateTime?
-  
-  // Archive (soft delete)
+
+  // Archive
   archived          Boolean             @default(false)
   archived_at       DateTime?
-  
+
   // Relations
   insights          Insight[]
   activities        TranscriptActivity[]
-  
+
   @@index([slack_user_id])
   @@index([status])
   @@index([origin])
   @@index([created_at])
   @@index([content_hash])
-  @@index([slack_user_id, content_hash, archived])
   @@index([archived])
 }
 
@@ -90,56 +89,55 @@ enum TranscriptStatus {
   failed
 }
 
-// Insights extracted from transcripts
+// Extracted insights
 model Insight {
   id                String          @id @default(uuid())
   transcript_id     String
   transcript        Transcript      @relation(fields: [transcript_id], references: [id], onDelete: Cascade)
-  
-  // Insight content
+
+  // Content
   title             String
   description       String          @db.Text
   type              InsightType
   category          String?
-  
-  // Author and Evidence (extracted from transcript)
-  author            String?         // Who mentioned this insight in the transcript
-  evidence_text     String?         @db.Text // Primary quote/fragment from transcript
-  evidence_quotes   Json            // Array of { quote: string, timestamp?: string, speaker?: string }
-  confidence        Float           // 0.0 to 1.0
-  
+
+  // Evidence
+  author            String?
+  evidence_text     String?         @db.Text
+  evidence_quotes   Json
+  confidence        Float
+
   // Deduplication
-  content_hash      String?         // Hash of normalized content for deduplication
+  content_hash      String?
   is_duplicate      Boolean         @default(false)
   duplicate_of_id   String?
   duplicate_similarity Float?
-  
+
   // Metadata
   timestamp_start   String?
   timestamp_end     String?
   speaker           String?
-  
+
   // Status and export
   status            InsightStatus   @default(new)
   approved          Boolean         @default(false)
   approved_at       DateTime?
   exported          Boolean         @default(false)
-  export_destinations Json?         // Array of { provider: string, id: string, exported_at: string, status: string }
-  
-  // Archive (soft delete - cascade from transcript)
+  export_destinations Json?
+
+  // Archive
   archived          Boolean         @default(false)
   archived_at       DateTime?
-  
+
   // Timestamps
   created_at        DateTime        @default(now())
   updated_at        DateTime        @updatedAt
-  
+
   @@index([transcript_id])
   @@index([type])
   @@index([status])
   @@index([approved])
   @@index([is_duplicate])
-  @@index([content_hash])
   @@index([archived])
 }
 
@@ -161,10 +159,10 @@ enum InsightType {
 }
 
 enum InsightStatus {
-  new           // Not yet exported (default)
-  exported      // Successfully exported to destination
-  export_failed // Export attempt failed
-  archived      // Archived/hidden by user
+  new
+  exported
+  export_failed
+  archived
 }
 
 // Activity log for transcripts
@@ -172,189 +170,106 @@ model TranscriptActivity {
   id             String      @id @default(uuid())
   transcript_id  String
   transcript     Transcript  @relation(fields: [transcript_id], references: [id], onDelete: Cascade)
-  
-  activity_type  String      // transcription_started, pass_1_completed, etc.
+
+  activity_type  String
   message        String
   metadata       Json?
-  
+
   created_at     DateTime    @default(now())
-  
+
   @@index([transcript_id])
   @@index([created_at])
 }
 
-// Model provider configurations (OpenAI, Anthropic, etc.)
-model ModelConfig {
-  id          String    @id @default(uuid())
-  user_id     String    // Slack user ID
-  
-  provider    String    // openai, anthropic, groq, ollama
-  label       String    // User-friendly name
-  api_key_encrypted String // Encrypted API key
-  
-  is_default  Boolean   @default(false)
-  model_type  String    // analysis, embeddings, whisper
-  model_name  String?   // gpt-4o, claude-3.5-sonnet, etc.
-  
-  // Connection test
-  last_tested DateTime?
-  test_status Boolean?
-  
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-  
-  @@index([user_id])
-  @@index([provider])
-  @@index([model_type])
-  @@unique([user_id, provider, label])
-}
-
-// Import source configurations (Zoom, Fireflies, etc.)
+// Import source configurations
 model ImportSource {
   id          String    @id @default(uuid())
-  user_id     String    // Slack user ID
-  
-  provider    String    // zoom, google_meet, fireflies, custom_api
+  user_id     String
+
+  provider    String
   label       String
   enabled     Boolean   @default(true)
-  
-  // Connection credentials (encrypted)
-  credentials_encrypted String?
-  
-  // Filters
-  lookback_days Int?
-  team_filter   String?
-  status_filter String?
-  
-  // Schedule (cron expression)
-  schedule    String    @default("0 * * * *") // Hourly
-  
-  // Last run info
-  last_run_at DateTime?
-  last_run_status String?
+
+  // API configuration
+  api_endpoint          String
+  api_key_encrypted     String?
+  api_secret_encrypted  String?
+  oauth_token_encrypted String?
+  auth_type             String
+
+  // Schedule
+  schedule    String    @default("0 * * * *")
   next_run_at DateTime?
-  
+
+  // Status
+  last_run_at     DateTime?
+  last_run_status String?
+  last_run_error  String?   @db.Text
+  last_run_count  Int?
+
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
-  
+
   @@index([user_id])
   @@index([provider])
   @@index([enabled])
+  @@index([next_run_at])
 }
 
-// Export destination configurations (Airtable, Notion, Google Sheets, Linear, Jira)
+// Export destination configurations
 model ExportConfig {
   id          String    @id @default(uuid())
-  user_id     String    // Slack user ID
+  user_id     String
 
-  provider    String    // airtable, notion, google_sheets, linear, jira
+  provider    String
   label       String
   enabled     Boolean   @default(true)
 
-  // Connection credentials (encrypted)
-  credentials_encrypted String
+  // Authentication
+  api_key_encrypted     String
+  api_secret_encrypted  String?
+  oauth_token_encrypted String?
+  auth_type             String
 
-  // Provider-specific config
-  base_id     String?   // Airtable base ID
-  table_name  String?   // Airtable table name
-  team_id     String?   // Linear team ID
-  project_id  String?   // Jira project ID
-  database_id String?   // Notion database ID
-  sheet_id    String?   // Google Sheets spreadsheet ID
-
-  // API endpoint (for custom integrations)
-  api_endpoint String?  // Custom API endpoint URL
+  // Destination configuration
+  base_id       String?
+  table_name    String?
+  team_id       String?
+  project_id    String?
+  database_id   String?
+  sheet_id      String?
+  workspace_id  String?
+  api_endpoint  String?
 
   // Field mapping
-  field_mapping Json    // { local_field: remote_field }
+  field_mapping   Json
+  available_fields Json?
 
-  // Filters
-  min_confidence Float?
-  types_filter   String[] @default([])
-  exclude_duplicates Boolean @default(true)
-
-  // Test status
-  last_tested DateTime?
-  test_status Boolean?
+  // Status
+  connection_tested Boolean   @default(false)
+  test_status       String?
+  test_error        String?   @db.Text
+  last_export_at    DateTime?
+  last_export_count Int?
+  total_exported    Int       @default(0)
 
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
 
   @@index([user_id])
   @@index([provider])
-  @@index([enabled])
-}
-
-// Knowledge base sources for enrichment
-model KnowledgeSource {
-  id          String    @id @default(uuid())
-  user_id     String    // Slack user ID
-
-  source_type String    // helpdesk, website, file, cloud_link, mcp_linear, mcp_productboard
-  label       String
-  enabled     Boolean   @default(true)
-
-  // Source location
-  url         String?
-  file_path   String?
-
-  // Auth credentials (if needed, encrypted)
-  auth_encrypted String?
-
-  // MCP-specific configuration
-  mcp_server_url String? // MCP server endpoint
-  mcp_config     Json?   // MCP-specific configuration
-
-  // Indexing metadata
-  indexed     Boolean   @default(false)
-  indexed_at  DateTime?
-  chunk_count Int       @default(0)
-
-  // Pinecone namespace
-  pinecone_namespace String?
-
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-
-  @@index([user_id])
-  @@index([source_type])
-  @@index([enabled])
-  @@index([indexed])
-}
-
-// System instructions and examples for LLM context
-model SystemInstruction {
-  id          String    @id @default(uuid())
-  user_id     String    // Slack user ID
-
-  // Instruction content
-  category    String    // pain_points, opportunities, hidden_requests, custom
-  examples    String    @db.Text // User-provided examples
-
-  // Metadata
-  enabled     Boolean   @default(true)
-
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-
-  @@index([user_id])
-  @@index([category])
   @@index([enabled])
 }
 
 // User settings and preferences
 model UserSetting {
   id          String    @id @default(uuid())
-  user_id     String    @unique // Slack user ID
+  user_id     String    @unique
 
-  // Preferences
-  research_depth Float   @default(0.7)
-  temperature    Float   @default(0.35)
-  auto_approve   Boolean @default(false)
-
-  // Notification preferences
   notify_on_completion Boolean @default(true)
   notify_on_failure    Boolean @default(true)
+  custom_context       String? @db.Text
+  insight_examples     String? @db.Text
 
   created_at  DateTime  @default(now())
   updated_at  DateTime  @updatedAt
